@@ -64,8 +64,9 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M0 | Repo skeleton, config, CI runs pytest | ✅ done |
 | M1 | Data layer (loaders, alignment/lags, folds) | ✅ done (tests green) |
 | M2 | Exo-MDP environment (E.3 dynamics, E.4 reward) | ✅ done (tests green) |
-| M3 | Metrics + classical baselines | ⏳ next |
-| M4-M9 | SB3 baselines → agent → grid → eval → synthetic → repro | pending |
+| M3 | Metrics (hand-computed tests) + classical baselines (1/N, B&H, MV, vol overlay) | ✅ done (tests green) |
+| M4 | SB3 baselines (cells 0–1) | ⏳ next — needs real data cache |
+| M5-M9 | agent → grid → eval → synthetic → repro | pending |
 
 ## Guardrails (never break these)
 
