@@ -23,7 +23,7 @@ import yaml
 class DataCfg:
     universe: str = "djia30"
     start: str = "2010-01-01"
-    end: str = "2024-12-31"
+    end: str = "2026-06-30"
     tickers: list[str] = field(default_factory=list)  # filled from universe yaml
     index_ticker: str = "^GSPC"
     vix_ticker: str = "^VIX"

@@ -2,7 +2,7 @@
 data:
   universe: djia30
   start: "2010-01-01"
-  end: "2024-12-31"
+  end: "2026-06-30"
   index_ticker: "^GSPC"
   vix_ticker: "^VIX"
   macro_series: [FEDFUNDS, CPIAUCSL]
