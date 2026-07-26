@@ -25,13 +25,32 @@ from exo_portfolio.config import Config
 # Cached fetchers
 # ---------------------------------------------------------------------------
 
+def _cache_covers(index: pd.Index, start: str, end: str,
+                  start_slack_days: int = 7, end_slack_days: int = 7) -> bool:
+    """True iff a cached date index actually spans [start, end].
+
+    Without this check a cache built for an earlier `end` (e.g. 2024-12-31)
+    silently satisfies a later request (e.g. 2026-06-30) and the loc-slice
+    just truncates — the fetch appears to succeed but stays at 2024.
+
+    Slack absorbs the gap between a requested calendar date and the nearest
+    available observation: a few days for daily market series (weekends,
+    holidays), longer for monthly macro reference periods.
+    """
+    if len(index) == 0:
+        return False
+    return (index.min() <= pd.Timestamp(start) + pd.Timedelta(days=start_slack_days)
+            and index.max() >= pd.Timestamp(end) - pd.Timedelta(days=end_slack_days))
+
+
 def fetch_prices(tickers: list[str], start: str, end: str,
                  cache_dir: str | Path) -> pd.DataFrame:
     """Adjusted daily close for `tickers`, columns = tickers, index = dates."""
     cache = Path(cache_dir) / "prices.csv"
     if cache.exists():
         df = pd.read_csv(cache, index_col=0, parse_dates=True)
-        if len(df) and set(tickers).issubset(df.columns):
+        if (set(tickers).issubset(df.columns)
+                and _cache_covers(df.index, start, end)):
             return df[tickers].loc[start:end]
 
     import yfinance as yf
@@ -54,7 +73,7 @@ def fetch_single(ticker: str, start: str, end: str,
     cache = Path(cache_dir) / f"{name}.csv"
     if cache.exists():
         df = pd.read_csv(cache, index_col=0, parse_dates=True)
-        if len(df):
+        if _cache_covers(df.index, start, end):
             return df.iloc[:, 0].loc[start:end]
 
     import yfinance as yf
@@ -123,7 +142,11 @@ def fetch_macro(series: list[str], start: str, end: str,
     cache = Path(cache_dir) / "macro.csv"
     if cache.exists():
         df = pd.read_csv(cache, index_col=0, parse_dates=True)
-        if len(df) and set(series).issubset(df.columns):
+        # Monthly reference periods: the newest observation can legitimately
+        # sit ~2 months before the requested end (publication lag).
+        if (set(series).issubset(df.columns)
+                and _cache_covers(df.index, start, end,
+                                  start_slack_days=35, end_slack_days=65)):
             return df[series].loc[start:end]
 
     key = _fred_api_key()

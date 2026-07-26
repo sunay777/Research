@@ -36,9 +36,6 @@ SB3_CELLS = ("cell0", "cell1")
 
 def run(cfg: Config, total_steps: int | None = None,
         results_root: str | Path = "results") -> dict:
-    from exo_portfolio.baselines.sb3_baselines import (evaluate_policy_window,
-                                                       train_sb3)
-
     run_dir = Path(results_root) / cfg.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "config.yaml").write_text(yaml.safe_dump(cfg.to_dict()))
@@ -46,23 +43,48 @@ def run(cfg: Config, total_steps: int | None = None,
 
     features = build_features(**load_raw_bundle(cfg), cfg=cfg)
     fold = rolling_origin_folds(features.dates, n_folds=5)[cfg.fold]
+    t0, t1 = int(fold.train_idx[0]), int(fold.train_idx[-1])
 
-    if cfg.cell not in SB3_CELLS:
-        raise NotImplementedError(
-            f"{cfg.cell} needs the custom Exo-agent (milestone M5); "
-            "cells 0-1 are the SB3 baselines.")
+    if cfg.cell in SB3_CELLS:
+        from exo_portfolio.baselines.sb3_baselines import (
+            evaluate_policy_window, train_sb3)
 
-    model = train_sb3(cfg, features,
-                      int(fold.train_idx[0]), int(fold.train_idx[-1]),
-                      level=cfg.cell, run_dir=run_dir,
-                      total_steps=total_steps)
+        model = train_sb3(cfg, features, t0, t1, level=cfg.cell,
+                          run_dir=run_dir, total_steps=total_steps)
+        evaluate = lambda s, e: evaluate_policy_window(
+            model, features, cfg, s, e, cfg.cell)
+    else:                                   # cells 2-4: the custom Exo-agent
+        import json as _json
+
+        import numpy as np_
+        import torch
+
+        from exo_portfolio.algos.ppo import PPO, evaluate_agent_window
+        from exo_portfolio.envs.portfolio_env import PortfolioEnv
+        from exo_portfolio.models.agent import (ExoActorCritic,
+                                                model_cfg_for_cell)
+
+        env = PortfolioEnv(features, cfg, t0, t1)
+        obs_dims = {k: int(np_.prod(s.shape))
+                    for k, s in env.observation_space.spaces.items()}
+        agent = ExoActorCritic(obs_dims, features.prices.shape[1] + 1,
+                               model_cfg_for_cell(cfg.cell, cfg.model),
+                               n_assets=features.prices.shape[1],
+                               price_window=cfg.data.price_window)
+        # capacity control (Manual L): record parameter counts per cell
+        (run_dir / "param_counts.json").write_text(
+            _json.dumps(agent.param_counts(), indent=2))
+
+        ppo = PPO(env, agent, cfg, run_dir=run_dir)
+        ppo.learn(int(total_steps or cfg.train.total_steps))
+        torch.save(agent.state_dict(), run_dir / "model.pt")
+        evaluate = lambda s, e: evaluate_agent_window(agent, features, cfg, s, e)
 
     metrics = {}
     series = {}
     for split_name, idx in (("train", fold.train_idx), ("val", fold.val_idx),
                             ("test", fold.test_idx)):
-        out = evaluate_policy_window(model, features, cfg,
-                                     int(idx[0]), int(idx[-1]), cfg.cell)
+        out = evaluate(int(idx[0]), int(idx[-1]))
         metrics[split_name] = out["metrics"]
         series[split_name] = out
 

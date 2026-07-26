@@ -66,8 +66,9 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M2 | Exo-MDP environment (E.3 dynamics, E.4 reward) | ✅ done (tests green) |
 | M3 | Metrics (hand-computed tests) + classical baselines (1/N, B&H, MV, vol overlay) | ✅ done (tests green) |
 | M4 | SB3 baselines (cells 0–1) + train.py entrypoint | ✅ code done; smoke-validated on real data |
-| M5 | Encoders + ExoActorCritic + custom PPO | ⏳ next |
-| M6-M9 | grid → eval → synthetic → repro | pending |
+| M5 | Encoders + ExoActorCritic (5-cell switches) + custom PPO | ✅ done (overfit gate green) |
+| M6 | Ablation grid runner | ⏳ next |
+| M7-M9 | eval/stats/diagnostics → synthetic → repro | pending |
 
 **M4 note (honest scope):** the "reproduce a known FinRL-style number" acceptance
 requires the full 2M-step budget per run — that belongs on the Mathematical
