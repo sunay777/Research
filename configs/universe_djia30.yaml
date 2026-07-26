@@ -1,0 +1,42 @@
+# v1 universe: DJIA-30 (Manual D.2).
+#
+# KNOWN LIMITATION (recorded per D.2): this is the *current* DJIA constituent
+# list as of mid-2024, not a historically-correct point-in-time list for
+# 2010-2024. Using it introduces survivorship bias; the thesis must state this.
+# If a point-in-time list becomes available, replace `tickers` and re-run.
+#
+# DOW (Dow Inc.) is in the current index but only listed in 2019, so it has no
+# 2010-2018 price history and is excluded (would violate the NaN policy, D.3).
+# 29 names remain.
+data:
+  universe: djia30
+  tickers:
+    - AAPL
+    - AMGN
+    - AMZN
+    - AXP
+    - BA
+    - CAT
+    - CRM
+    - CSCO
+    - CVX
+    - DIS
+    - GS
+    - HD
+    - HON
+    - IBM
+    - INTC
+    - JNJ
+    - JPM
+    - KO
+    - MCD
+    - MMM
+    - MRK
+    - MSFT
+    - NKE
+    - PG
+    - TRV
+    - UNH
+    - V
+    - VZ
+    - WMT

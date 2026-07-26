@@ -1,0 +1,13 @@
+# Ablation grid (Manual Part H): 5 cells x seeds x folds.
+# run_grid.py expands this into individual (cell, seed, fold) runs.
+# Optimiser, seeds, folds, data and step budget are IDENTICAL across cells;
+# only the architecture switches differ (Manual A.1.6).
+cells:
+  cell0: {encoder: single, critic: symmetric,  exo_mode: none}    # no exo info
+  cell1: {encoder: single, critic: symmetric,  exo_mode: concat}  # monolithic MDP
+  cell2: {encoder: dual,   critic: symmetric,  exo_mode: split}   # encoder effect
+  cell3: {encoder: single, critic: asymmetric, exo_mode: concat}  # privilege effect
+  cell4: {encoder: dual,   critic: asymmetric, exo_mode: split}   # full proposed agent
+
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+folds: [0, 1, 2, 3, 4]

@@ -1,0 +1,26 @@
+[project]
+name = "exo_portfolio"
+version = "0.1.0"
+description = "Exploiting Exogenous Structure in RL for Portfolio Optimisation (Exo-MDP agent)"
+authors = [{ name = "Sunay Master (2677874)" }]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "gymnasium",
+    "pyyaml",
+    "scipy",
+    "yfinance",
+    "pandas-datareader",
+]
+
+[project.optional-dependencies]
+# Needed from M4/M5 onward (agents + baselines); not required for M0-M3.
+rl = ["torch>=2.0", "stable-baselines3", "tensorboard", "statsmodels"]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["exo_portfolio*"]

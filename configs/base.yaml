@@ -1,0 +1,39 @@
+# Shared defaults (Development Manual C.3). Overridden by more specific files.
+data:
+  universe: djia30
+  start: "2010-01-01"
+  end: "2024-12-31"
+  index_ticker: "^GSPC"
+  vix_ticker: "^VIX"
+  macro_series: [FEDFUNDS, CPIAUCSL]
+  macro_publication_lag_days:
+    FEDFUNDS: 1      # monthly average, published ~1 business day after month end
+    CPIAUCSL: 14     # CPI released ~mid following month
+  price_window: 30
+  cache_dir: data_cache
+
+env:
+  transaction_cost: 0.001
+  reward_window_K: 20
+  reward_eps: 1.0e-8
+  allow_short: false
+
+model:
+  encoder: dual
+  critic: asymmetric
+  exo_mode: split
+  d_endo: 32
+  d_exo: 128
+
+train:
+  algo: ppo
+  total_steps: 2000000
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  lr: 3.0e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip: 0.2
+
+seed: 0
+fold: 0
+cell: cell4
