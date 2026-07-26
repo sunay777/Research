@@ -51,6 +51,12 @@ Downloads DJIA-30 adjusted OHLCV, ^GSPC, ^VIX (yfinance) and FEDFUNDS/CPIAUCSL
 matrices. Requires network access; all tests run on synthetic fixtures and do
 **not** need the download.
 
+FRED access uses the official API when a key is present — put
+`FRED_API_KEY=...` in a `.env` file at the repo root (gitignored) or export it
+as an environment variable. Without a key it falls back to the public
+fredgraph CSV endpoint. yfinance needs no key. Run once on a machine with
+internet; the CSV cache makes everything reproducible offline afterwards.
+
 ## Milestone status (Manual Part F)
 
 | M | Deliverable | Status |

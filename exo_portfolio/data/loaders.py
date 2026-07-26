@@ -71,9 +71,50 @@ def fetch_single(ticker: str, start: str, end: str,
     return s
 
 
+def _fred_api_key() -> str | None:
+    """FRED API key from the FRED_API_KEY env var or an untracked .env file.
+
+    The key is a personal credential: it lives in .env (gitignored) or the
+    environment — NEVER in config YAML or anything committed.
+    """
+    import os
+
+    if os.environ.get("FRED_API_KEY"):
+        return os.environ["FRED_API_KEY"]
+    for candidate in (Path(".env"), Path(__file__).resolve().parents[2] / ".env"):
+        if candidate.exists():
+            for line in candidate.read_text().splitlines():
+                if line.strip().startswith("FRED_API_KEY="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
+
+def _fetch_fred_api(series: list[str], start: str, end: str,
+                    api_key: str) -> pd.DataFrame:
+    """Official FRED API (api.stlouisfed.org). Values are indexed by their
+    *reference-period* date, matching pandas-datareader's fredgraph output."""
+    import json
+    import urllib.request
+
+    cols = {}
+    for sid in series:
+        url = ("https://api.stlouisfed.org/fred/series/observations"
+               f"?series_id={sid}&api_key={api_key}&file_type=json"
+               f"&observation_start={start}&observation_end={end}")
+        with urllib.request.urlopen(url, timeout=30) as r:
+            obs = json.load(r)["observations"]
+        s = pd.Series({pd.Timestamp(o["date"]): float(o["value"])
+                       for o in obs if o["value"] != "."}, name=sid)
+        cols[sid] = s
+    return pd.DataFrame(cols).sort_index()
+
+
 def fetch_macro(series: list[str], start: str, end: str,
                 cache_dir: str | Path) -> pd.DataFrame:
     """FRED series, columns = series codes, index = reference-period dates.
+
+    Uses the official FRED API when a key is available (env FRED_API_KEY or
+    .env), else falls back to pandas-datareader's fredgraph CSV endpoint.
 
     NOTE: the index carries the *reference period* date (e.g. 2020-03-01 for
     March CPI). Publication lag is applied later, in align.apply_publication_lag
@@ -85,9 +126,13 @@ def fetch_macro(series: list[str], start: str, end: str,
         if len(df) and set(series).issubset(df.columns):
             return df[series].loc[start:end]
 
-    import pandas_datareader.data as web
+    key = _fred_api_key()
+    if key:
+        df = _fetch_fred_api(series, start, end, key)
+    else:
+        import pandas_datareader.data as web
 
-    df = web.DataReader(series, "fred", start, end)
+        df = web.DataReader(series, "fred", start, end)
     if df.dropna(how="all").empty:
         raise RuntimeError("Empty FRED download — not caching.")
     cache.parent.mkdir(parents=True, exist_ok=True)
