@@ -65,8 +65,16 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M1 | Data layer (loaders, alignment/lags, folds) | ✅ done (tests green) |
 | M2 | Exo-MDP environment (E.3 dynamics, E.4 reward) | ✅ done (tests green) |
 | M3 | Metrics (hand-computed tests) + classical baselines (1/N, B&H, MV, vol overlay) | ✅ done (tests green) |
-| M4 | SB3 baselines (cells 0–1) | ⏳ next — needs real data cache |
-| M5-M9 | agent → grid → eval → synthetic → repro | pending |
+| M4 | SB3 baselines (cells 0–1) + train.py entrypoint | ✅ code done; smoke-validated on real data |
+| M5 | Encoders + ExoActorCritic + custom PPO | ⏳ next |
+| M6-M9 | grid → eval → synthetic → repro | pending |
+
+**M4 note (honest scope):** the "reproduce a known FinRL-style number" acceptance
+requires the full 2M-step budget per run — that belongs on the Mathematical
+Sciences Cluster (Manual L). In-session validation: a 50k-step PPO cell1 run on
+real fold0 executes end-to-end and yields plausible under-trained metrics
+(train Sharpe ≈ 1.1, COVID-window test Sharpe ≈ 0.06, maxDD 32%). Full-budget
+runs: `python -m exo_portfolio.train --config configs/base.yaml configs/universe_djia30.yaml --cell cell1 --seed 0 --fold 0`.
 
 ## Guardrails (never break these)
 

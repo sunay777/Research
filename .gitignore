@@ -7,3 +7,4 @@ results/*
 .pytest_cache/
 .DS_Store
 .env
+repo.bundle
