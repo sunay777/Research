@@ -67,8 +67,15 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M3 | Metrics (hand-computed tests) + classical baselines (1/N, B&H, MV, vol overlay) | ✅ done (tests green) |
 | M4 | SB3 baselines (cells 0–1) + train.py entrypoint | ✅ code done; smoke-validated on real data |
 | M5 | Encoders + ExoActorCritic (5-cell switches) + custom PPO | ✅ done (overfit gate green) |
-| M6 | Ablation grid runner | ⏳ next |
-| M7-M9 | eval/stats/diagnostics → synthetic → repro | pending |
+| M6 | Ablation grid runner (`run_grid.py`: emit-jobs / run / aggregate) | ✅ done (5-cell micro-grid green) |
+| M7 | Regime labels + paired stats + diagnostics | ⏳ next |
+| M8-M9 | synthetic Exo-MDP → full repro | pending |
+
+**Launching the real grid (cluster):**
+`python -m exo_portfolio.run_grid --config configs/base.yaml configs/universe_djia30.yaml --emit-jobs`
+prints one independent job command per (cell, seed, fold) — 250 runs at the
+full budget. `--run` executes locally and is resumable (skips completed runs);
+`--aggregate` builds `results/summary.csv` and the per-cell mean ± std table.
 
 **M4 note (honest scope):** the "reproduce a known FinRL-style number" acceptance
 requires the full 2M-step budget per run — that belongs on the Mathematical
