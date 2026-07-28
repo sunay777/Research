@@ -93,6 +93,7 @@ def run(cfg: Config, total_steps: int | None = None,
         "date": series["test"]["dates"],
         "log_return": series["test"]["log_returns"],
         "turnover": series["test"]["turnover"],
+        "exposure": series["test"]["exposure"],
     }).to_csv(run_dir / "series_test.csv", index=False)
 
     print(f"[{cfg.run_id}] fold={fold.name}")

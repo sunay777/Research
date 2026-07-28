@@ -100,7 +100,7 @@ def evaluate_policy_window(model, features: FeatureSet, cfg: Config,
     row plus the step-level series (for regime slicing at M7)."""
     env = make_env(features, cfg, start, end, level)
     obs, _ = env.reset(seed=cfg.seed)
-    rhos, taus, dates = [], [], []
+    rhos, taus, dates, exposures = [], [], [], []
     done = False
     while not done:
         action, _ = model.predict(obs, deterministic=deterministic)
@@ -108,8 +108,10 @@ def evaluate_policy_window(model, features: FeatureSet, cfg: Config,
         rhos.append(info["step_log_return"])
         taus.append(info["turnover"])
         dates.append(info["date"])
+        exposures.append(1.0 - float(info["weights"][0]))   # 1 - cash (J.4)
         done = terminated or truncated
     row = summarize(np.array(rhos), np.array(taus))
     row["final_value"] = float(np.exp(np.sum(rhos)))
     return {"metrics": row, "log_returns": np.array(rhos),
-            "turnover": np.array(taus), "dates": dates}
+            "turnover": np.array(taus), "dates": dates,
+            "exposure": np.array(exposures)}

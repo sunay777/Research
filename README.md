@@ -68,8 +68,16 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M4 | SB3 baselines (cells 0–1) + train.py entrypoint | ✅ code done; smoke-validated on real data |
 | M5 | Encoders + ExoActorCritic (5-cell switches) + custom PPO | ✅ done (overfit gate green) |
 | M6 | Ablation grid runner (`run_grid.py`: emit-jobs / run / aggregate) | ✅ done (5-cell micro-grid green) |
-| M7 | Regime labels + paired stats + diagnostics | ⏳ next |
-| M8-M9 | synthetic Exo-MDP → full repro | pending |
+| M7 | Causal regime labels + paired stats (Holm) + J.4 diagnostics | ✅ done (tests green; real-data demo) |
+| M8 | Synthetic Exo-MDP `P_exo`-shift experiment | ⏳ next |
+| M9 | One-command full reproduction | pending |
+
+**M7 notes:** regime labels are trailing-quantile VIX (causal; lookahead-tested).
+Paired tests use Shapiro → ttest_rel / Wilcoxon signed-rank (the manual's
+mannwhitneyu is unpaired; signed-rank is the correct paired analogue —
+documented deviation). Evaluation series now record per-day equity exposure,
+so `eval/diagnostics.py` can run the exposure~VIX regression (HAC errors) and
+the VIX-spike impulse response per run.
 
 **Launching the real grid (cluster):**
 `python -m exo_portfolio.run_grid --config configs/base.yaml configs/universe_djia30.yaml --emit-jobs`

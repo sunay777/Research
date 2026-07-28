@@ -171,7 +171,7 @@ def evaluate_agent_window(agent: ExoActorCritic, features, cfg: Config,
 
     env = PortfolioEnv(features, cfg, start, end)
     obs, _ = env.reset(seed=cfg.seed)
-    rhos, taus, dates = [], [], []
+    rhos, taus, dates, exposures = [], [], [], []
     done = False
     while not done:
         with torch.no_grad():
@@ -181,8 +181,10 @@ def evaluate_agent_window(agent: ExoActorCritic, features, cfg: Config,
         rhos.append(info["step_log_return"])
         taus.append(info["turnover"])
         dates.append(info["date"])
+        exposures.append(1.0 - float(info["weights"][0]))   # 1 - cash (J.4)
         done = terminated or truncated
     row = summarize(np.array(rhos), np.array(taus))
     row["final_value"] = float(np.exp(np.sum(rhos)))
     return {"metrics": row, "log_returns": np.array(rhos),
-            "turnover": np.array(taus), "dates": dates}
+            "turnover": np.array(taus), "dates": dates,
+            "exposure": np.array(exposures)}
