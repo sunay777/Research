@@ -47,7 +47,7 @@ def load_grid(path: str | Path) -> dict:
 def _validate_cells(cells: dict) -> None:
     """The YAML documents the switches; the agent compiles them. They must
     never diverge silently."""
-    from exo_portfolio.models.agent import CELL_PRESETS
+    from exo_portfolio.models.presets import CELL_PRESETS
 
     for name, switches in cells.items():
         preset = CELL_PRESETS.get(name)

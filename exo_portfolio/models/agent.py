@@ -24,25 +24,10 @@ import torch.nn as nn
 from exo_portfolio.config import ModelCfg
 from exo_portfolio.models.encoders import EndoEncoder, ExoEncoder, mlp
 from exo_portfolio.models.heads import ActorHead, CriticHead
-
-# Part H — the ablation grid as presets of the three switches.
-CELL_PRESETS: dict[str, dict] = {
-    "cell0": dict(encoder="single", critic="symmetric", exo_mode="none"),
-    "cell1": dict(encoder="single", critic="symmetric", exo_mode="concat"),
-    "cell2": dict(encoder="dual", critic="symmetric", exo_mode="split"),
-    "cell3": dict(encoder="single", critic="asymmetric", exo_mode="concat"),
-    "cell4": dict(encoder="dual", critic="asymmetric", exo_mode="split"),
-}
-
-VALID_COMBOS = {("single", "none"), ("single", "concat"), ("dual", "split")}
-
-
-def model_cfg_for_cell(cell: str, base: ModelCfg | None = None) -> ModelCfg:
-    base = base or ModelCfg()
-    preset = CELL_PRESETS[cell]
-    return ModelCfg(encoder=preset["encoder"], critic=preset["critic"],
-                    exo_mode=preset["exo_mode"],
-                    d_endo=base.d_endo, d_exo=base.d_exo)
+# Presets live in a torch-free module (CI/grid tooling imports them without
+# torch); re-exported here for backward compatibility.
+from exo_portfolio.models.presets import (CELL_PRESETS, VALID_COMBOS,  # noqa: F401
+                                          model_cfg_for_cell)
 
 
 class _FeatureStream(nn.Module):

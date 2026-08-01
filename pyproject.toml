@@ -10,13 +10,14 @@ dependencies = [
     "gymnasium",
     "pyyaml",
     "scipy",
+    "statsmodels",
     "yfinance",
     "pandas-datareader",
 ]
 
 [project.optional-dependencies]
 # Needed from M4/M5 onward (agents + baselines); not required for M0-M3.
-rl = ["torch>=2.0", "stable-baselines3", "tensorboard", "statsmodels"]
+rl = ["torch>=2.0", "stable-baselines3", "tensorboard"]
 dev = ["pytest"]
 
 [tool.pytest.ini_options]
