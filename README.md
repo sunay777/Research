@@ -69,8 +69,18 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M5 | Encoders + ExoActorCritic (5-cell switches) + custom PPO | ✅ done (overfit gate green) |
 | M6 | Ablation grid runner (`run_grid.py`: emit-jobs / run / aggregate) | ✅ done (5-cell micro-grid green) |
 | M7 | Causal regime labels + paired stats (Holm) + J.4 diagnostics | ✅ done (tests green; real-data demo) |
-| M8 | Synthetic Exo-MDP `P_exo`-shift experiment | ⏳ next |
-| M9 | One-command full reproduction | pending |
+| M8 | Synthetic Exo-MDP `P_exo`-shift experiment | ✅ code done; full ≥10-seed run is a cluster job |
+| M9 | One-command full reproduction | ⏳ next |
+
+**M8 notes:** `envs/synthetic_exo.py` — 2-state Markov regime driving asset
+returns, observed by the actor only through a noisy embedding + clutter dims;
+the privileged channel carries the true regime. Shift ∈ [0,1] interpolates
+transitions and regime means toward the fully swapped world; the observation
+map is fixed across shifts (tested). Runner trains cells on shift=0 and
+evaluates across the shift grid, with a true-regime oracle per shift so
+degradation can be reported as regret (raw curves confound brittleness with
+achievable reward at intermediate shifts). Full run:
+`python -m exo_portfolio.envs.synthetic_exo --seeds 10 --train-steps 100000`.
 
 **M7 notes:** regime labels are trailing-quantile VIX (causal; lookahead-tested).
 Paired tests use Shapiro → ttest_rel / Wilcoxon signed-rank (the manual's
