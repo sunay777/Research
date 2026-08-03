@@ -11,6 +11,7 @@ dependencies = [
     "pyyaml",
     "scipy",
     "statsmodels",
+    "matplotlib",
     "yfinance",
     "pandas-datareader",
 ]

@@ -209,6 +209,11 @@ def run_shift_experiment(cells=("cell1", "cell2", "cell4"),
     the world is intrinsically less profitable and raw curves confound
     brittleness with achievable reward.
 
+    NOTE (interpretation): the oracle applies the TRAINING-world mapping
+    (invest-when-calm), so under large shifts it becomes anti-optimal and
+    regret can go negative — it is a frozen-expert reference, not an upper
+    bound. State this in the write-up when presenting regret curves.
+
     Full acceptance run (>=10 seeds) belongs on the cluster; smaller calls of
     this same function are used for smoke tests.
     """

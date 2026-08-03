@@ -70,7 +70,27 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M6 | Ablation grid runner (`run_grid.py`: emit-jobs / run / aggregate) | ✅ done (5-cell micro-grid green) |
 | M7 | Causal regime labels + paired stats (Holm) + J.4 diagnostics | ✅ done (tests green; real-data demo) |
 | M8 | Synthetic Exo-MDP `P_exo`-shift experiment | ✅ code done; full ≥10-seed run is a cluster job |
-| M9 | One-command full reproduction | ⏳ next |
+| M9 | One-command full reproduction (`reproduce.py`) | ✅ done (smoke budget verified end-to-end) |
+
+## Reproducing everything (M9)
+
+```bash
+# wiring check on a laptop (~10 min): 1 seed × 1 fold × 4096 steps
+python -m exo_portfolio.reproduce --config configs/base.yaml configs/universe_djia30.yaml --budget smoke
+
+# the real thing (cluster scale): 10 seeds × 5 folds × 2M steps
+python -m exo_portfolio.reproduce --config configs/base.yaml configs/universe_djia30.yaml --budget full
+```
+
+Stages run in order and are resumable: `data → grid → classical → synthetic →
+report → figures` (select with `--stages`). Outputs land in
+`results/tables/` (grid summary, Holm-corrected cell comparisons, regime-
+conditional metrics, J.5 cost sensitivity at c ∈ {0.0005, 0.001, 0.002},
+classical baselines, synthetic shift) and `results/figures/` (learning
+curves, degradation-vs-shift with oracle reference, equity curves with
+stressed shading, exposure~VIX betas, VIX-spike impulse response).
+Note: the synthetic oracle applies the training-world mapping — a frozen
+expert reference, not an upper bound; regret can go negative at large shifts.
 
 **M8 notes:** `envs/synthetic_exo.py` — 2-state Markov regime driving asset
 returns, observed by the actor only through a noisy embedding + clutter dims;
