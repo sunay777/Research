@@ -1,0 +1,32 @@
+# Exo feature-ablation axis (M10) — a SEPARATE experimental axis from the
+# architecture grid (configs/experiment_grid.yaml), exactly like the J.5 cost
+# sweep. It NEVER edits the architecture cells; it masks a NAMED group of the
+# actor's exogenous features and re-runs a couple of reference cells.
+#
+# Layout of exo_actor (data/align.build_features):
+#   [ N * price_window per-asset return cols ] + gspc_lr + vix + macro_lagged...
+# groups: {asset_returns, index, vix, macro}
+# modes : {keep, zero, permute, noise}   (all dimension-preserving, in-place)
+#
+# DIMENSIONALITY RULE (Manual G.1): for the custom dual-encoder cells
+# (cell2/cell4) the ExoEncoder assumes a fixed n_market = d_exo - N*W, so we
+# ablate by ZEROING / PERMUTING / NOISING IN PLACE — never by physically
+# dropping columns. Physical column drop would only be valid for the classical
+# and SB3 cells; it is intentionally not used here.
+
+# Reference cells to run the sweep on: cell4 (full proposed agent) with cell1
+# (monolithic MDP) as the concat reference. Keep to ONE feature-group at a time
+# first (Manual A.1.6: one change at a time).
+cells: [cell4, cell1]
+
+# The sweep is the cross product of these two axes plus an explicit keep/none
+# control row (added by the runner).
+groups: [asset_returns, index, vix, macro]
+modes:  [zero, permute, noise]
+
+seeds: [0]
+folds: [0]
+
+# Deterministic seed for the permutation / noise draw (independent of the price
+# path, so it injects no lookahead — see data/align.mask_exo_array).
+mask_seed: 0

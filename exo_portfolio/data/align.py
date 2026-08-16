@@ -90,6 +90,86 @@ class FeatureSet:
             assert df.index.equals(self.dates)
 
 
+# ---------------------------------------------------------------------------
+# Exo feature-ablation axis (M10) — mask NAMED groups of exo_actor.
+#
+# A SEPARATE experimental axis from the architecture grid (like the J.5 cost
+# sweep): it degrades one named group of the ACTOR's exogenous features while
+# leaving obs dimensionality untouched, so the custom dual-encoder cells keep
+# their fixed ExoEncoder layout (Manual G.1). Physical column drop is never
+# used — every mode is in-place.
+# ---------------------------------------------------------------------------
+
+EXO_GROUPS = ("asset_returns", "index", "vix", "macro")
+EXO_MASK_MODES = ("keep", "zero", "permute", "noise")
+
+
+def exo_group_slices(n_assets: int, price_window: int,
+                     n_exo_cols: int) -> dict[str, slice]:
+    """Column ranges of each NAMED exo_actor group, matching the build_features
+    layout: [ N*price_window asset-return cols ] + gspc_lr + vix + macro...
+    """
+    n_aw = n_assets * price_window
+    return {
+        "asset_returns": slice(0, n_aw),
+        "index": slice(n_aw, n_aw + 1),
+        "vix": slice(n_aw + 1, n_aw + 2),
+        "macro": slice(n_aw + 2, n_exo_cols),
+    }
+
+
+def mask_exo_array(exo: np.ndarray, sl: slice, mode: str,
+                   rng: np.random.Generator) -> np.ndarray:
+    """Return a copy of `exo` (T, d) with columns `sl` degraded per `mode`.
+
+    - keep    : identity.
+    - zero    : columns set to 0 (the feature is removed but its slot remains).
+    - permute : rows of the block permuted along TIME. The permutation is drawn
+                from a fixed seed, independent of the price path, so it injects
+                no predictive (lookahead) signal — it only destroys the
+                feature's temporal alignment. The column value multiset is
+                preserved (a genuine reordering), which is what makes it a
+                causal-safe ablation rather than a data leak.
+    - noise   : columns replaced by standard-normal noise (deterministic seed).
+    """
+    assert mode in EXO_MASK_MODES, mode
+    out = exo.copy()
+    if mode == "keep":
+        return out
+    block = out[:, sl]
+    if mode == "zero":
+        out[:, sl] = 0.0
+    elif mode == "permute":
+        out[:, sl] = block[rng.permutation(block.shape[0])]
+    elif mode == "noise":
+        out[:, sl] = rng.standard_normal(block.shape).astype(out.dtype)
+    return out
+
+
+def apply_exo_ablation(features: "FeatureSet", cfg: Config) -> "FeatureSet":
+    """Return a FeatureSet with cfg.exo_ablation applied to exo_actor.
+
+    A no-op when group is 'none' or mode is 'keep'. Dimension-preserving:
+    columns/index are untouched so every cell (classical, SB3, custom) consumes
+    the same shape (Manual G.1 dimensionality rule for cell2/cell4).
+    """
+    ab = cfg.exo_ablation
+    if ab.group == "none" or ab.mode == "keep":
+        return features
+    assert ab.group in EXO_GROUPS, f"unknown exo group: {ab.group}"
+
+    exo = features.exo_actor.values.astype(np.float32)
+    n_assets = features.prices.shape[1]
+    sl = exo_group_slices(n_assets, cfg.data.price_window,
+                          exo.shape[1])[ab.group]
+    masked = mask_exo_array(exo, sl, ab.mode, np.random.default_rng(ab.seed))
+    exo_actor = pd.DataFrame(masked, index=features.exo_actor.index,
+                             columns=features.exo_actor.columns)
+    return FeatureSet(dates=features.dates, prices=features.prices,
+                      exo_actor=exo_actor,
+                      exo_critic_extra=features.exo_critic_extra)
+
+
 def build_features(prices: pd.DataFrame, index: pd.Series, vix: pd.Series,
                    macro: pd.DataFrame, cfg: Config) -> FeatureSet:
     """Assemble the aligned feature matrices.

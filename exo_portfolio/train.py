@@ -26,7 +26,7 @@ import pandas as pd
 import yaml
 
 from exo_portfolio.config import Config, seed_everything
-from exo_portfolio.data.align import build_features
+from exo_portfolio.data.align import apply_exo_ablation, build_features
 from exo_portfolio.data.loaders import load_raw_bundle
 from exo_portfolio.data.splits import rolling_origin_folds
 
@@ -42,6 +42,9 @@ def run(cfg: Config, total_steps: int | None = None,
     seed_everything(cfg.seed)
 
     features = build_features(**load_raw_bundle(cfg), cfg=cfg)
+    # exo feature-ablation axis (M10): no-op unless cfg.exo_ablation is set.
+    # Dimension-preserving, so it threads through both SB3 and custom cells.
+    features = apply_exo_ablation(features, cfg)
     fold = rolling_origin_folds(features.dates, n_folds=5)[cfg.fold]
     t0, t1 = int(fold.train_idx[0]), int(fold.train_idx[-1])
 
