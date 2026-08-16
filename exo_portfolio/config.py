@@ -55,6 +55,34 @@ class ModelCfg:
 
 
 @dataclass
+class ExoAblationCfg:
+    """Exo-feature ablation axis (M10). A SEPARATE experimental axis from the
+    architecture grid — like the J.5 cost sweep — that masks a named group of
+    the actor's exogenous features. Default (keep/none) is a no-op.
+
+    group ∈ {none, asset_returns, index, vix, macro} — the NAMED exo_actor
+           groups (data/align.build_features layout).
+    mode  ∈ {keep, zero, permute, noise} — how the group is degraded. All modes
+           are dimension-preserving (in-place), so the custom dual-encoder cells
+           (cell2/cell4) keep their fixed ExoEncoder layout (Manual G.1).
+    """
+    group: str = "none"
+    mode: str = "keep"
+    seed: int = 0                    # deterministic permutation / noise draw
+
+
+@dataclass
+class BaselinesCfg:
+    """Hyper-parameters for the non-RL baselines (Manual K), so nothing is a
+    magic number in a function body (Manual A.1.2). The M3 baselines keep their
+    own defaults; these drive the M10 traditional weight-rules."""
+    trad_window: int = 60           # trailing window for inverse-vol/min-var/max-Sharpe
+    trad_ridge: float = 1e-4        # covariance ridge (shared with mean_variance style)
+    momentum_lookback: int = 60     # trailing window for cross-sectional momentum
+    momentum_top_k: int = 10        # hold the top-k trailing performers, equal-weighted
+
+
+@dataclass
 class TrainCfg:
     algo: str = "ppo"
     total_steps: int = 2_000_000
@@ -71,6 +99,8 @@ class Config:
     env: EnvCfg = field(default_factory=EnvCfg)
     model: ModelCfg = field(default_factory=ModelCfg)
     train: TrainCfg = field(default_factory=TrainCfg)
+    baselines: BaselinesCfg = field(default_factory=BaselinesCfg)
+    exo_ablation: ExoAblationCfg = field(default_factory=ExoAblationCfg)
     seed: int = 0
     fold: int = 0
     cell: str = "cell4"
@@ -91,6 +121,8 @@ class Config:
             env=EnvCfg(**d.get("env", {})),
             model=ModelCfg(**d.get("model", {})),
             train=TrainCfg(**d.get("train", {})),
+            baselines=BaselinesCfg(**d.get("baselines", {})),
+            exo_ablation=ExoAblationCfg(**d.get("exo_ablation", {})),
             **{k: v for k, v in d.items()
                if k in ("seed", "fold", "cell")},
         )
