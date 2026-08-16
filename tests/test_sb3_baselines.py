@@ -67,3 +67,30 @@ def test_eval_deterministic(setup):
     a = evaluate_policy_window(model, fs, cfg, 120, 180, "cell0")
     b = evaluate_policy_window(model, fs, cfg, 120, 180, "cell0")
     assert np.array_equal(a["log_returns"], b["log_returns"])
+
+
+def test_algo_class_covers_finrl_family():
+    from exo_portfolio.baselines.sb3_baselines import (OFF_POLICY, ON_POLICY,
+                                                       _algo_class)
+    from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
+    assert _algo_class("ddpg") is DDPG and _algo_class("td3") is TD3
+    assert _algo_class("ppo") is PPO and _algo_class("sac") is SAC
+    assert _algo_class("a2c") is A2C
+    assert set(ON_POLICY) == {"ppo", "a2c"}
+    assert set(OFF_POLICY) == {"sac", "ddpg", "td3"}
+
+
+@pytest.mark.parametrize("algo", ["ddpg", "td3"])
+def test_smoke_offpolicy_train_and_eval(setup, algo):
+    """An off-policy (replay-buffer) SB3 baseline trains end-to-end at a tiny
+    budget and evaluates to finite metrics — the guard must not feed it the
+    on-policy-only gae_lambda / clip hyper-parameters."""
+    cfg, fs = setup
+    cfg.train.algo = algo
+    model = train_sb3(cfg, fs, 0, 120, level="cell1",
+                      run_dir=f"/tmp/sb3_{algo}", total_steps=200)
+    out = evaluate_policy_window(model, fs, cfg, 120, 180, "cell1")
+    m = out["metrics"]
+    assert np.isfinite(m["cum_log_return"]) and np.isfinite(m["sharpe"])
+    assert 0 <= m["max_drawdown"] <= 1
+    assert len(out["log_returns"]) == 60

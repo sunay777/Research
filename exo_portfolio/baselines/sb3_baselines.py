@@ -21,7 +21,8 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from exo_portfolio.config import Config, seed_everything
-from exo_portfolio.data.align import FeatureSet
+from exo_portfolio.data.align import (FeatureSet, exo_group_slices,
+                                      mask_exo_array)
 from exo_portfolio.envs.portfolio_env import PortfolioEnv
 from exo_portfolio.eval.metrics import summarize
 
@@ -48,6 +49,37 @@ class InfoLevelWrapper(gym.ObservationWrapper):
         return np.concatenate([obs["endo"], obs["exo_actor"]])
 
 
+class ExoMaskWrapper(gym.ObservationWrapper):
+    """Mask a NAMED group of the actor's exogenous features (M10 exo-ablation
+    axis) — analogous to InfoLevelWrapper, but it degrades a feature group
+    in-place (dimension-preserving) instead of choosing an information level.
+
+    Modes {keep, zero, permute, noise} match data.align.mask_exo_array. The
+    whole-dataset masked array is precomputed once (so permute-in-time is a
+    single deterministic reordering), then the row for the env's current step
+    is served. Observation dimensionality is never changed, so the custom
+    dual-encoder cells keep their fixed ExoEncoder layout (Manual G.1).
+    """
+
+    def __init__(self, env: gym.Env, group: str, mode: str, seed: int = 0):
+        super().__init__(env)
+        self.group = group
+        self.mode = mode
+        base = env.unwrapped
+        if group == "none" or mode == "keep":
+            self._masked = base.exo_actor
+        else:
+            sl = exo_group_slices(base.N, base.cfg.data.price_window,
+                                  base.exo_actor.shape[1])[group]
+            self._masked = mask_exo_array(base.exo_actor, sl, mode,
+                                          np.random.default_rng(seed))
+
+    def observation(self, obs: dict) -> dict:
+        obs = dict(obs)
+        obs["exo_actor"] = self._masked[self.env.unwrapped.t]
+        return obs
+
+
 def make_env(features: FeatureSet, cfg: Config, start: int, end: int,
              level: str) -> gym.Env:
     from stable_baselines3.common.monitor import Monitor
@@ -55,10 +87,18 @@ def make_env(features: FeatureSet, cfg: Config, start: int, end: int,
     return Monitor(InfoLevelWrapper(PortfolioEnv(features, cfg, start, end), level))
 
 
-def _algo_class(name: str):
-    from stable_baselines3 import A2C, PPO, SAC
+# The FinRL algorithm family, apples-to-apples in THIS env (Manual K / A.2):
+# on-policy PPO/A2C, off-policy SAC/DDPG/TD3. (FinRL-Meta's DataOps pipeline is
+# a separate concern — we only borrow the algorithm set.)
+ON_POLICY = ("ppo", "a2c")
+OFF_POLICY = ("sac", "ddpg", "td3")
 
-    return {"ppo": PPO, "sac": SAC, "a2c": A2C}[name.lower()]
+
+def _algo_class(name: str):
+    from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
+
+    return {"ppo": PPO, "sac": SAC, "a2c": A2C,
+            "ddpg": DDPG, "td3": TD3}[name.lower()]
 
 
 def train_sb3(cfg: Config, features: FeatureSet, train_start: int,
@@ -76,15 +116,18 @@ def train_sb3(cfg: Config, features: FeatureSet, train_start: int,
     algo_cls = _algo_class(cfg.train.algo)
     env = make_env(features, cfg, train_start, train_end, level)
 
+    # Shared optimiser hyper-parameters (Manual A.1.6), guarded by algorithm
+    # family: gae_lambda is on-policy-only; clip is PPO-only; the off-policy
+    # replay learners take only lr/gamma from cfg.
+    algo = cfg.train.algo.lower()
     kwargs = dict(seed=cfg.seed, verbose=0,
-                  tensorboard_log=str(run_dir / "tb"))
-    if cfg.train.algo.lower() in ("ppo", "a2c"):
-        kwargs.update(learning_rate=cfg.train.lr, gamma=cfg.train.gamma,
-                      gae_lambda=cfg.train.gae_lambda)
-    if cfg.train.algo.lower() == "ppo":
+                  tensorboard_log=str(run_dir / "tb"),
+                  learning_rate=cfg.train.lr, gamma=cfg.train.gamma)
+    if algo in ON_POLICY:
+        kwargs.update(gae_lambda=cfg.train.gae_lambda)
+    if algo == "ppo":
         kwargs.update(clip_range=cfg.train.clip)
-    if cfg.train.algo.lower() == "sac":
-        kwargs.update(learning_rate=cfg.train.lr, gamma=cfg.train.gamma)
+    assert algo in ON_POLICY or algo in OFF_POLICY, f"unknown algo {algo}"
 
     model = algo_cls("MlpPolicy", env, **kwargs)
     model.learn(total_timesteps=int(total_steps or cfg.train.total_steps),
