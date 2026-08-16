@@ -76,37 +76,87 @@ def stage_grid(cfg_paths, budget, results: Path):
     return aggregate(results)
 
 
-def stage_classical(cfg: Config, features, folds, results: Path) -> pd.DataFrame:
+def _write_baseline_run(results: Path, cfg0: Config, name: str, seed: int,
+                        fold: int, series: dict, meta: dict) -> None:
+    """Emit a baseline run under the standard {name}_seed{seed}_fold{fold} dir
+    so it flows through stage_report (regime-conditional + J.5) and
+    run_grid.aggregate exactly like an RL cell (Manual M10). The baseline name
+    goes in the `cell` column, as stage_classical already did."""
+    d = results / f"{name}_seed{seed}_fold{fold}"
+    d.mkdir(parents=True, exist_ok=True)
+    cfg_dict = cfg0.to_dict()
+    cfg_dict.update(cell=name, seed=seed, fold=fold)
+    (d / "config.yaml").write_text(yaml.safe_dump(cfg_dict))
+    (d / "baseline.json").write_text(json.dumps(meta))
+    (d / "metrics.json").write_text(json.dumps({"test": series["metrics"]}, indent=2))
+    pd.DataFrame({
+        "date": series["dates"],
+        "log_return": series["log_returns"],
+        "turnover": series["turnover"],
+        "exposure": series["exposure"],
+    }).to_csv(d / "series_test.csv", index=False)
+
+
+def stage_classical(cfg: Config, features, folds, results: Path,
+                    budget: dict | None = None) -> pd.DataFrame:
+    """Every non-RL baseline (Manual K + M10) per fold, emitted as run-dirs with
+    a per-day series_test.csv so they reach the same tables/stats as the RL
+    agents. Deterministic baselines get one run per fold (paired by FOLD; no
+    across-seed spread); the random baselines get one per (seed, fold) so they
+    carry a genuine across-seed distribution."""
     from exo_portfolio.baselines.classical import (buy_and_hold_index,
-                                                   equal_weight_targets,
-                                                   mean_variance_targets,
-                                                   simulate_target_weights,
-                                                   vol_overlay_targets)
+                                                   deterministic_target_baselines,
+                                                   random_policy_in_env,
+                                                   random_target_baselines,
+                                                   simulate_baseline_series)
     from exo_portfolio.eval.metrics import summarize
 
+    budget = budget or BUDGETS["smoke"]
+    seeds = budget["seeds"]
     index = fetch_single(cfg.data.index_ticker, cfg.data.start, cfg.data.end,
                          cfg.data.cache_dir, "gspc")
     rows = []
-    for fold_id, fold in enumerate(folds):
+    for fold_id in budget["folds"]:                # align with the grid's folds
+        fold = folds[fold_id]
         prices = features.prices.iloc[fold.test_idx]
-        T, N = prices.shape
-        runs = {
-            "equal_weight": simulate_target_weights(
-                prices, equal_weight_targets(T, N), cfg.env.transaction_cost),
-            "vol_overlay": simulate_target_weights(
-                prices, vol_overlay_targets(prices), cfg.env.transaction_cost),
-            "mean_variance": simulate_target_weights(
-                prices, mean_variance_targets(prices), cfg.env.transaction_cost),
-            "buy_and_hold_index": buy_and_hold_index(index.loc[prices.index]),
-        }
-        for name, r in runs.items():
+        t0, t1 = int(fold.test_idx[0]), int(fold.test_idx[-1])
+
+        # deterministic simplex baselines (classical + M10 traditional), seed 0
+        det = deterministic_target_baselines(prices, cfg)
+        det_series = {name: simulate_baseline_series(
+            prices, tg, cfg.env.transaction_cost) for name, tg in det.items()}
+        # buy-and-hold the index: cost-invariant, fully invested
+        bh = buy_and_hold_index(index.loc[prices.index])
+        bh_row = summarize(bh["log_returns"], bh["turnover"])
+        bh_row["final_value"] = bh["final_value"]
+        det_series["buy_and_hold_index"] = {
+            "metrics": bh_row, "log_returns": bh["log_returns"],
+            "turnover": bh["turnover"], "dates": list(prices.index[1:]),
+            "exposure": np.ones(len(bh["log_returns"]))}
+
+        for name, ser in det_series.items():
+            kind = "index" if name == "buy_and_hold_index" else "deterministic"
+            _write_baseline_run(results, cfg, name, 0, fold_id, ser,
+                                {"name": name, "kind": kind, "seed": 0})
             rows.append({"cell": name, "fold": fold_id, "split": "test",
-                         **summarize(r["log_returns"], r["turnover"])})
+                         **ser["metrics"]})
+
+        # random baselines: one run per (seed, fold) — genuine across-seed spread
+        for seed in seeds:
+            for name, tg in random_target_baselines(prices, seed).items():
+                ser = simulate_baseline_series(prices, tg, cfg.env.transaction_cost)
+                _write_baseline_run(results, cfg, name, seed, fold_id, ser,
+                                    {"name": name, "kind": "random_target", "seed": seed})
+            ser = random_policy_in_env(features, cfg, t0, t1, seed=seed)
+            _write_baseline_run(results, cfg, "random_action", seed, fold_id, ser,
+                                {"name": "random_action", "kind": "random_action", "seed": seed})
+
     df = pd.DataFrame(rows)
     out = results / "tables" / "classical.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out, index=False)
-    print(f"[classical] {len(df)} rows -> {out}")
+    print(f"[classical] {len(df)} deterministic rows -> {out}; "
+          f"baseline run-dirs emitted (random seeds: {list(seeds)})")
     return df
 
 
@@ -126,12 +176,49 @@ def stage_synthetic(budget, results: Path) -> pd.DataFrame:
     return df
 
 
+def _baseline_policy(run_dir: Path, features):
+    """Re-evaluate callable for a non-RL baseline run — recomputes its target
+    rows on the fold window at the requested cost, so baselines get J.5 cost
+    sensitivity too (buy-and-hold is cost-invariant: its stored series is
+    reused)."""
+    from exo_portfolio.baselines.classical import (
+        deterministic_target_baselines, random_policy_in_env,
+        random_target_baselines, simulate_baseline_series)
+    from exo_portfolio.eval.metrics import summarize
+
+    meta = json.loads((run_dir / "baseline.json").read_text())
+    name, kind, seed = meta["name"], meta["kind"], int(meta.get("seed", 0))
+
+    def evaluate(s, e, c):
+        prices = features.prices.iloc[s:e + 1]
+        if kind == "deterministic":
+            tg = deterministic_target_baselines(prices, c)[name]
+            return simulate_baseline_series(prices, tg, c.env.transaction_cost)
+        if kind == "random_target":
+            tg = random_target_baselines(prices, seed)[name]
+            return simulate_baseline_series(prices, tg, c.env.transaction_cost)
+        if kind == "random_action":
+            return random_policy_in_env(features, c, s, e, seed=seed)
+        # index baseline (buy-and-hold): cost-invariant, reuse stored series
+        sdf = pd.read_csv(run_dir / "series_test.csv", parse_dates=["date"])
+        row = summarize(sdf["log_return"].values, sdf["turnover"].values)
+        row["final_value"] = float(np.exp(sdf["log_return"].sum()))
+        return {"metrics": row, "log_returns": sdf["log_return"].values,
+                "turnover": sdf["turnover"].values, "dates": list(sdf["date"]),
+                "exposure": sdf["exposure"].values}
+
+    return evaluate
+
+
 def _load_policy(run_dir: Path, features, cfg: Config):
     """Rebuild the evaluate(start, end, cfg) callable for a saved run."""
+    if (run_dir / "baseline.json").exists():                # non-RL baselines
+        return _baseline_policy(run_dir, features)
     if (run_dir / "model.zip").exists():                    # SB3 cells
-        from stable_baselines3 import A2C, PPO, SAC
+        from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3
 
-        algo = {"ppo": PPO, "sac": SAC, "a2c": A2C}[cfg.train.algo]
+        algo = {"ppo": PPO, "sac": SAC, "a2c": A2C,
+                "ddpg": DDPG, "td3": TD3}[cfg.train.algo]
         model = algo.load(run_dir / "model.zip", device="cpu")
         from exo_portfolio.baselines.sb3_baselines import evaluate_policy_window
 
@@ -178,17 +265,38 @@ def stage_report(cfg0: Config, features, folds, results: Path):
         return
     summary_table(df).to_csv(tables / "grid_summary_test.csv")
 
-    # paired stats (needs >=3 matched pairs)
-    n_pairs = df[df["split"] == "test"].groupby("cell").size().min()
+    # paired stats across the architecture grid (matched by seed+fold)
+    grid_cells = [c for c in ("cell0", "cell1", "cell2", "cell3", "cell4")
+                  if c in df["cell"].values]
+    n_pairs = (df[df["split"] == "test"]
+               .groupby("cell").size().reindex(grid_cells).min()
+               if grid_cells else 0)
     if n_pairs >= 3:
         compare_cells(df).to_csv(tables / "cell_comparisons_holm.csv", index=False)
         seed_fold_dispersion(df).to_csv(tables / "dispersion.csv")
     else:
-        print(f"[report] only {n_pairs} matched pairs — stats need >=3, skipped")
+        print(f"[report] only {n_pairs} matched grid pairs — stats need >=3, skipped")
 
-    # regime-conditional + diagnostics per run; cost sensitivity (J.5)
+    # cell4 vs the non-RL baselines, paired by FOLD (deterministic baselines
+    # have no across-seed spread — Manual M10 / K credibility bar)
+    baseline_cells = tuple(c for c in ("equal_weight", "vol_overlay",
+                                       "mean_variance", "inverse_vol",
+                                       "min_variance", "max_sharpe", "momentum",
+                                       "buy_and_hold_index", "random_weight",
+                                       "random_buy_and_hold", "random_action")
+                           if c in df["cell"].values)
+    n_folds = df[df["split"] == "test"]["fold"].nunique()
+    if "cell4" in df["cell"].values and baseline_cells and n_folds >= 3:
+        vs_base = compare_cells(df, target="cell4", baselines=baseline_cells,
+                                pair_on=("fold",))
+        if len(vs_base):
+            vs_base.to_csv(tables / "cell4_vs_baselines_holm.csv", index=False)
+
+    # regime-conditional + diagnostics per run; cost sensitivity (J.5).
+    # Glob is `*_seed*_fold*` (not `cell*_...`) so the non-RL baseline run-dirs
+    # emitted by stage_classical flow through here too (Manual M10).
     regime_rows, diag_rows, betas, cost_rows, responses = [], [], [], [], {}
-    for run_dir in sorted(results.glob("cell*_seed*_fold*")):
+    for run_dir in sorted(results.glob("*_seed*_fold*")):
         s_path = run_dir / "series_test.csv"
         if not s_path.exists():
             continue
@@ -286,7 +394,7 @@ def main(argv=None):
     if "grid" in args.stages:
         stage_grid(args.config, budget, results)
     if "classical" in args.stages:
-        stage_classical(cfg0, features, folds, results)
+        stage_classical(cfg0, features, folds, results, budget)
     if "synthetic" in args.stages:
         stage_synthetic(budget, results)
     if "report" in args.stages:

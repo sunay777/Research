@@ -101,6 +101,41 @@ def test_compare_cells_pairing_and_holm():
     assert set(disp.index) == {"cell1", "cell4"}
 
 
+def test_paired_test_zero_variance_baseline():
+    """A deterministic baseline paired by fold can give a CONSTANT non-zero
+    difference — must be handled without dividing by zero."""
+    a = np.array([1.5, 1.5, 1.5, 1.5])          # target, constant
+    b = np.array([1.0, 1.0, 1.0, 1.0])          # deterministic baseline
+    res = paired_test(a, b)
+    assert res["test"] == "constant_diff"
+    assert res["pvalue"] == 0.0
+    assert res["mean_diff"] == pytest.approx(0.5)
+    assert np.isfinite(res["mean_diff"])         # no NaN from a 0/0
+
+
+def test_compare_cells_pair_by_fold_deterministic_baseline():
+    """A deterministic baseline (identical across seeds) is paired by FOLD;
+    the comparison runs and holm-corrects without crashing."""
+    rows = []
+    for seed in range(4):
+        for fold in range(5):
+            rng = np.random.default_rng(seed * 10 + fold)
+            rows.append({"cell": "cell4", "seed": seed, "fold": fold,
+                         "split": "test", "sharpe": 1.0 + 0.1 * fold + rng.normal(0, 0.02),
+                         "sortino": 1.0, "cum_log_return": 0.2, "max_drawdown": 0.2})
+            # deterministic baseline: value depends only on fold, not seed
+            rows.append({"cell": "equal_weight", "seed": seed, "fold": fold,
+                         "split": "test", "sharpe": 0.5 + 0.1 * fold,
+                         "sortino": 0.5, "cum_log_return": 0.1, "max_drawdown": 0.3})
+    df = pd.DataFrame(rows)
+    out = compare_cells(df, target="cell4", baselines=("equal_weight",),
+                        pair_on=("fold",))
+    sharpe_row = out[out["metric"] == "sharpe"].iloc[0]
+    assert sharpe_row["n"] == 5                    # paired across 5 folds
+    assert sharpe_row["pair_on"] == "fold"
+    assert np.isfinite(sharpe_row["pvalue"])
+
+
 # -------------------------------------------------------------- diagnostics
 
 def test_exposure_vix_regression_recovers_negative_beta():

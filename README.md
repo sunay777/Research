@@ -71,6 +71,7 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M7 | Causal regime labels + paired stats (Holm) + J.4 diagnostics | ✅ done (tests green; real-data demo) |
 | M8 | Synthetic Exo-MDP `P_exo`-shift experiment | ✅ code done; full ≥10-seed run is a cluster job |
 | M9 | One-command full reproduction (`reproduce.py`) | ✅ done (smoke budget verified end-to-end) |
+| M10 | Baseline extensions (random + traditional weight-rules, DDPG/TD3, exo-feature ablation axis, baselines wired into the tables/stats) | ✅ done (tests green; smoke reproduction verified) |
 
 ## Reproducing everything (M9)
 
@@ -91,6 +92,38 @@ curves, degradation-vs-shift with oracle reference, equity curves with
 stressed shading, exposure~VIX betas, VIX-spike impulse response).
 Note: the synthetic oracle applies the training-world mapping — a frozen
 expert reference, not an upper bound; regret can go negative at large shifts.
+
+**M10 notes (baseline extensions):** three *separate* experimental axes, none
+of which touch the architecture grid (`experiment_grid.yaml` is unchanged —
+they are new axes, like the J.5 cost sweep).
+- *More non-RL baselines* (`baselines/classical.py`), all routed through the
+  proven shared simulator `simulate_target_weights` so their numbers are
+  directly comparable to the RL agents: random weights each step, random
+  buy-and-hold, a random-action-in-env rollout (action sampler seeded
+  explicitly — `env.reset(seed)` only seeds the observation RNG), plus
+  inverse-vol/risk-parity, minimum-variance (Σ⁻¹1), naive-tangency
+  maximum-Sharpe (diagonal Σ⁻¹μ, distinct from the full-covariance
+  `mean_variance`), and cross-sectional top-k momentum (`k` in `cfg.baselines`).
+  Every rule is causal (lookahead-tested).
+- *FinRL algorithm family* (`baselines/sb3_baselines.py`): DDPG and TD3 join
+  PPO/SAC/A2C at cell0/cell1 information levels, apples-to-apples in this env
+  (not FinRL-Meta's DataOps). The optimiser-hyperparameter guard keeps
+  `gae_lambda` on-policy-only and `clip` PPO-only.
+- *Exo feature-ablation axis* (`data/align.py` masking + `ExoMaskWrapper` +
+  `configs/exo_ablation.yaml`, driven by `cfg.exo_ablation`): mask a NAMED
+  exo_actor group {asset_returns, index, vix, macro} in modes
+  {keep, zero, permute, noise}. All modes are dimension-preserving (in-place),
+  so the custom dual-encoder cells (cell2/cell4) keep their fixed ExoEncoder
+  layout — columns are never physically dropped. permute-in-time is a
+  deterministic, seed-fixed reordering drawn independently of the price path
+  (no lookahead). Run it with `python -m exo_portfolio.exo_ablation`.
+- *Integration:* every baseline now emits a per-day `series_test.csv` under the
+  `{name}_seed{seed}_fold{fold}` convention, so the random/traditional/classical
+  baselines flow through `stage_report` into the regime-conditional (Claim B)
+  and J.5 cost-sensitivity tables and `run_grid.aggregate`'s `summary.csv`.
+  Deterministic baselines have no across-seed spread, so they are paired by
+  FOLD in `stats.compare_cells`; the paired test now handles a zero-variance
+  baseline without dividing by zero.
 
 **M8 notes:** `envs/synthetic_exo.py` — 2-state Markov regime driving asset
 returns, observed by the actor only through a noisy embedding + clutter dims;
