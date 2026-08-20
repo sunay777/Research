@@ -1,18 +1,6 @@
-# exo_portfolio — Exploiting Exogenous Structure in RL for Portfolio Optimisation
+# exo_portfolio - Exploiting Exogenous Structure in RL for Portfolio Optimisation
 
-Honours research project, Sunay Master (2677874). Built strictly to
-`Development_Manual.md` (the *how*) and `Development_Design_Notes.md` (the *why*)
-in the parent Research folder.
-
-## The two claims the code must keep separate (Manual Part B)
-
-- **Claim A (sample efficiency / stability):** the factored agent reaches a
-  performance threshold in fewer env steps and with lower seed variance than the
-  monolithic baseline. Evidence: learning curves, steps-to-threshold, seed variance.
-- **Claim B (robustness under `P_exo` shift):** better risk-adjusted performance
-  in *stressed* out-of-sample windows. Evidence: regime-conditional metrics on
-  real data **and** the synthetic `P_exo`-shift experiment — an inductive-bias
-  argument, *not* a corollary of the Exo-MDP regret bounds.
+Honours research project, Sunay Master (2677874).
 
 ## Layout
 
@@ -59,27 +47,26 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 
 ## Milestone status (Manual Part F)
 
-| M | Deliverable | Status |
-|---|---|---|
-| M0 | Repo skeleton, config, CI runs pytest | ✅ done |
-| M1 | Data layer (loaders, alignment/lags, folds) | ✅ done (tests green) |
-| M2 | Exo-MDP environment (E.3 dynamics, E.4 reward) | ✅ done (tests green) |
-| M3 | Metrics (hand-computed tests) + classical baselines (1/N, B&H, MV, vol overlay) | ✅ done (tests green) |
-| M4 | SB3 baselines (cells 0–1) + train.py entrypoint | ✅ code done; smoke-validated on real data |
-| M5 | Encoders + ExoActorCritic (5-cell switches) + custom PPO | ✅ done (overfit gate green) |
-| M6 | Ablation grid runner (`run_grid.py`: emit-jobs / run / aggregate) | ✅ done (5-cell micro-grid green) |
-| M7 | Causal regime labels + paired stats (Holm) + J.4 diagnostics | ✅ done (tests green; real-data demo) |
-| M8 | Synthetic Exo-MDP `P_exo`-shift experiment | ✅ code done; full ≥10-seed run is a cluster job |
-| M9 | One-command full reproduction (`reproduce.py`) | ✅ done (smoke budget verified end-to-end) |
+| M   | Deliverable                                                                                                                         | Status                                             |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| M0  | Repo skeleton, config, CI runs pytest                                                                                               | ✅ done                                            |
+| M1  | Data layer (loaders, alignment/lags, folds)                                                                                         | ✅ done (tests green)                              |
+| M2  | Exo-MDP environment (E.3 dynamics, E.4 reward)                                                                                      | ✅ done (tests green)                              |
+| M3  | Metrics (hand-computed tests) + classical baselines (1/N, B&H, MV, vol overlay)                                                     | ✅ done (tests green)                              |
+| M4  | SB3 baselines (cells 0–1) + train.py entrypoint                                                                                     | ✅ code done; smoke-validated on real data         |
+| M5  | Encoders + ExoActorCritic (5-cell switches) + custom PPO                                                                            | ✅ done (overfit gate green)                       |
+| M6  | Ablation grid runner (`run_grid.py`: emit-jobs / run / aggregate)                                                                   | ✅ done (5-cell micro-grid green)                  |
+| M7  | Causal regime labels + paired stats (Holm) + J.4 diagnostics                                                                        | ✅ done (tests green; real-data demo)              |
+| M8  | Synthetic Exo-MDP `P_exo`-shift experiment                                                                                          | ✅ code done; full ≥10-seed run is a cluster job   |
+| M9  | One-command full reproduction (`reproduce.py`)                                                                                      | ✅ done (smoke budget verified end-to-end)         |
 | M10 | Baseline extensions (random + traditional weight-rules, DDPG/TD3, exo-feature ablation axis, baselines wired into the tables/stats) | ✅ done (tests green; smoke reproduction verified) |
 
 ## Reproducing everything (M9)
 
 ```bash
-# wiring check on a laptop (~10 min): 1 seed × 1 fold × 4096 steps
+#laptop
 python -m exo_portfolio.reproduce --config configs/base.yaml configs/universe_djia30.yaml --budget smoke
-
-# the real thing (cluster scale): 10 seeds × 5 folds × 2M steps
+#cluster
 python -m exo_portfolio.reproduce --config configs/base.yaml configs/universe_djia30.yaml --budget full
 ```
 
@@ -93,10 +80,11 @@ stressed shading, exposure~VIX betas, VIX-spike impulse response).
 Note: the synthetic oracle applies the training-world mapping — a frozen
 expert reference, not an upper bound; regret can go negative at large shifts.
 
-**M10 notes (baseline extensions):** three *separate* experimental axes, none
+**M10 notes (baseline extensions):** three _separate_ experimental axes, none
 of which touch the architecture grid (`experiment_grid.yaml` is unchanged —
 they are new axes, like the J.5 cost sweep).
-- *More non-RL baselines* (`baselines/classical.py`), all routed through the
+
+- _More non-RL baselines_ (`baselines/classical.py`), all routed through the
   proven shared simulator `simulate_target_weights` so their numbers are
   directly comparable to the RL agents: random weights each step, random
   buy-and-hold, a random-action-in-env rollout (action sampler seeded
@@ -105,11 +93,11 @@ they are new axes, like the J.5 cost sweep).
   maximum-Sharpe (diagonal Σ⁻¹μ, distinct from the full-covariance
   `mean_variance`), and cross-sectional top-k momentum (`k` in `cfg.baselines`).
   Every rule is causal (lookahead-tested).
-- *FinRL algorithm family* (`baselines/sb3_baselines.py`): DDPG and TD3 join
+- _FinRL algorithm family_ (`baselines/sb3_baselines.py`): DDPG and TD3 join
   PPO/SAC/A2C at cell0/cell1 information levels, apples-to-apples in this env
   (not FinRL-Meta's DataOps). The optimiser-hyperparameter guard keeps
   `gae_lambda` on-policy-only and `clip` PPO-only.
-- *Exo feature-ablation axis* (`data/align.py` masking + `ExoMaskWrapper` +
+- _Exo feature-ablation axis_ (`data/align.py` masking + `ExoMaskWrapper` +
   `configs/exo_ablation.yaml`, driven by `cfg.exo_ablation`): mask a NAMED
   exo_actor group {asset_returns, index, vix, macro} in modes
   {keep, zero, permute, noise}. All modes are dimension-preserving (in-place),
@@ -117,7 +105,7 @@ they are new axes, like the J.5 cost sweep).
   layout — columns are never physically dropped. permute-in-time is a
   deterministic, seed-fixed reordering drawn independently of the price path
   (no lookahead). Run it with `python -m exo_portfolio.exo_ablation`.
-- *Integration:* every baseline now emits a per-day `series_test.csv` under the
+- _Integration:_ every baseline now emits a per-day `series_test.csv` under the
   `{name}_seed{seed}_fold{fold}` convention, so the random/traditional/classical
   baselines flow through `stage_report` into the regime-conditional (Claim B)
   and J.5 cost-sensitivity tables and `run_grid.aggregate`'s `summary.csv`.
@@ -154,14 +142,3 @@ Sciences Cluster (Manual L). In-session validation: a 50k-step PPO cell1 run on
 real fold0 executes end-to-end and yields plausible under-trained metrics
 (train Sharpe ≈ 1.1, COVID-window test Sharpe ≈ 0.06, maxDD 32%). Full-budget
 runs: `python -m exo_portfolio.train --config configs/base.yaml configs/universe_djia30.yaml --cell cell1 --seed 0 --fold 0`.
-
-## Guardrails (never break these)
-
-1. **No lookahead** — any feature at day *t* was knowable at the close of day *t*;
-   macro is published with a lag, and the lag is applied. `tests/test_no_lookahead.py`
-   is the gate.
-2. **`exo_critic_extra` discipline** — un-lagged macro is privileged input for the
-   asymmetric critic only; the actor never touches it; nothing is ever dated > *t*.
-3. **One config object**, everything seeded, deterministic env step.
-4. **The ablation grid stays clean** — identical optimiser/seeds/data/budget
-   across cells; only architecture switches differ.
