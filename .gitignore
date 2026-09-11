@@ -9,3 +9,6 @@ results/*
 .env
 repo.bundle
 .venv/
+
+results_smoke/
+*.log
