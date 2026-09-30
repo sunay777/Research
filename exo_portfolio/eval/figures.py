@@ -170,7 +170,13 @@ def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
         return None
     fig, ax = plt.subplots(figsize=(4.6, 3.2))
     order = [c for c in CELL_COLORS if c in set(betas["cell"])]
-    sub = betas.set_index("cell").loc[order]
+    g = betas.groupby("cell")["beta"]
+    if g.size().max() > 1:
+        # one row per (cell, fold): plot the across-fold mean, SE across folds
+        sub = pd.DataFrame({"beta": g.mean(),
+                            "se": g.std(ddof=1) / np.sqrt(g.size())}).loc[order]
+    else:
+        sub = betas.set_index("cell").loc[order]
     colors = [CELL_COLORS[c] for c in order]
     err = 1.96 * sub["se"] if "se" in sub else None
     ax.bar(order, sub["beta"], color=colors, width=0.6,
