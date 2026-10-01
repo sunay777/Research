@@ -21,11 +21,14 @@ import matplotlib.pyplot as plt
 # fixed categorical slots (validated): color follows the cell, everywhere
 CELL_COLORS = {
     "cell0": "#2a78d6",   # blue
+    "cell0c": "#2a78d6",  # cell0 on the custom PPO: same blue, dashed
     "cell1": "#eb6834",   # orange
     "cell2": "#1baf7a",   # aqua
     "cell3": "#eda100",   # yellow
     "cell4": "#e87ba4",   # magenta
 }
+# a cell that shares another's color is told apart by dash pattern
+CELL_LINESTYLES = {"cell0c": "--"}
 CLASSICAL_COLOR = "#898781"      # muted — classical baselines are context
 INK = "#0b0b0b"
 MUTED = "#898781"
@@ -75,7 +78,8 @@ def fig_learning_curves(results_root: str | Path, out: Path) -> Path | None:
     for cell, g in df.groupby("cell"):
         agg = g.groupby("env_steps")["mean_reward"].agg(["mean", "std"])
         c = CELL_COLORS.get(cell, MUTED)
-        ax.plot(agg.index, agg["mean"], color=c, linewidth=2, label=cell)
+        ax.plot(agg.index, agg["mean"], color=c, linewidth=2, label=cell,
+                linestyle=CELL_LINESTYLES.get(cell, "-"))
         if agg["std"].notna().any():
             ax.fill_between(agg.index, agg["mean"] - agg["std"],
                             agg["mean"] + agg["std"], color=c, alpha=0.15,
@@ -108,6 +112,7 @@ def fig_synthetic_shift(csv_path: str | Path, out: Path) -> Path | None:
             c = CELL_COLORS.get(cell, MUTED)
             ci = 1.96 * agg["std"] / np.sqrt(agg["count"].clip(lower=1))
             ax.plot(agg.index, agg["mean"], color=c, linewidth=2,
+                    linestyle=CELL_LINESTYLES.get(cell, "-"),
                     marker="o", markersize=4, label=cell)
             if agg["std"].notna().any():
                 ax.fill_between(agg.index, agg["mean"] - ci, agg["mean"] + ci,
@@ -136,7 +141,8 @@ def fig_equity_curves(results_root: str | Path, out: Path,
             continue
         s = pd.read_csv(p, parse_dates=["date"]).set_index("date")
         ax.plot(s.index, s["log_return"].cumsum(), linewidth=2,
-                color=CELL_COLORS[cell], label=cell)
+                color=CELL_COLORS[cell], label=cell,
+                linestyle=CELL_LINESTYLES.get(cell, "-"))
         plotted = True
     if not plotted:
         plt.close(fig)
@@ -179,8 +185,12 @@ def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
         sub = betas.set_index("cell").loc[order]
     colors = [CELL_COLORS[c] for c in order]
     err = 1.96 * sub["se"] if "se" in sub else None
-    ax.bar(order, sub["beta"], color=colors, width=0.6,
-           yerr=err, ecolor=MUTED, capsize=3, error_kw={"linewidth": 1})
+    bars = ax.bar(order, sub["beta"], color=colors, width=0.6,
+                  yerr=err, ecolor=MUTED, capsize=3, error_kw={"linewidth": 1})
+    for bar, c in zip(bars, order):     # shared-color cells: hatched bar
+        if c in CELL_LINESTYLES:
+            bar.set_hatch("///")
+            bar.set_edgecolor(SURFACE)
     ax.axhline(0, color="#c3c2b7", linewidth=1)
     ax.set_ylabel("exposure ~ VIX slope (β)")
     ax.set_title("De-risking response to VIX by cell")
@@ -200,6 +210,7 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
         days = np.arange(len(r["mean_response"]))
         c = CELL_COLORS.get(cell, MUTED)
         ax.plot(days, r["mean_response"], color=c, linewidth=2,
+                linestyle=CELL_LINESTYLES.get(cell, "-"),
                 marker="o", markersize=3.5, label=f"{cell} (n={r['n_spikes']})")
         if r.get("se_response"):
             se = np.asarray(r["se_response"])

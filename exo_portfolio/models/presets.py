@@ -15,6 +15,10 @@ CELL_PRESETS: dict[str, dict] = {
     "cell2": dict(encoder="dual", critic="symmetric", exo_mode="split"),
     "cell3": dict(encoder="single", critic="asymmetric", exo_mode="concat"),
     "cell4": dict(encoder="dual", critic="asymmetric", exo_mode="split"),
+    # cell0 switches, trained on the custom PPO (controls for the
+    # SB3-vs-custom implementation confound). Deliberately NOT in
+    # train.SB3_CELLS, so it dispatches to the custom-PPO branch.
+    "cell0c": dict(encoder="single", critic="symmetric", exo_mode="none"),
 }
 
 VALID_COMBOS = {("single", "none"), ("single", "concat"), ("dual", "split")}

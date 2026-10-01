@@ -33,8 +33,8 @@ from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 
-from exo_portfolio.eval.figures import (CELL_COLORS, INK, MUTED, SURFACE,
-                                        _save, _style_ax)
+from exo_portfolio.eval.figures import (CELL_COLORS, CELL_LINESTYLES, INK,
+                                        MUTED, SURFACE, _save, _style_ax)
 from exo_portfolio.eval.regimes import label_stressed_vix
 
 STRESS_FILL = "#f3d9cf"          # soft warm tint: regime context, not a series
@@ -42,6 +42,7 @@ FOLD_LINE = "#9d9c94"
 
 CELL_LABELS = {
     "cell0": "cell0 (no exo)",
+    "cell0c": "cell0c (no exo, custom PPO)",
     "cell1": "cell1 (monolithic)",
     "cell2": "cell2",
     "cell3": "cell3",
@@ -223,8 +224,9 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
                             zorder=1, label=f"{cell} seed range (10th–90th pct.)")
             allv += [q10.values, q90.values]
         ax.plot(med.index, med.values, color=c, lw=2, zorder=4,
-                label=CELL_LABELS[cell])
-        ends.append((med.iloc[-1], CELL_LABELS[cell].split(" ")[0], c))
+                ls=CELL_LINESTYLES.get(cell, "-"),
+                label=CELL_LABELS.get(cell, cell))
+        ends.append((med.iloc[-1], cell, c))
         allv.append(med.values)
 
     allv = np.concatenate(allv)

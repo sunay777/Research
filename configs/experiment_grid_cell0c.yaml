@@ -1,0 +1,9 @@
+# cell0c add-on grid: cell0's switches trained on the custom PPO (algos/ppo.py)
+# instead of SB3, to control for the SB3-vs-custom implementation confound in
+# the cell4-vs-cell0 comparison. Same seeds/folds as experiment_grid.yaml;
+# the main 250-run grid is unchanged.
+cells:
+  cell0c: {encoder: single, critic: symmetric, exo_mode: none}    # cell0 on custom PPO
+
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+folds: [0, 1, 2, 3, 4]
