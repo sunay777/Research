@@ -7,7 +7,8 @@ import pytest
 
 from exo_portfolio.eval.diagnostics import (exposure_vix_regression,
                                             find_vix_spikes,
-                                            pool_impulse_responses,
+                                            pool_impulse_by_event,
+                                            summarize_exposure_vix,
                                             vix_spike_impulse_response)
 from exo_portfolio.eval.regimes import (label_stressed_vix,
                                         regime_conditional_metrics)
@@ -178,18 +179,34 @@ def test_impulse_response_detects_derisking():
     assert max(abs(x) for x in res_flat["mean_response"]) == pytest.approx(0.0)
 
 
-def test_pool_impulse_responses_equals_stacking():
-    """Pooling per-run (n, mean, se) must equal stacking every spike path."""
+def test_pool_impulse_by_event_does_not_double_count_seeds():
+    """Seeds sharing a fold see the same spikes: pooling must average them
+    per event, so n = distinct events and the SE is across events."""
     rng = np.random.default_rng(1)
-    groups = [rng.normal(k, 1 + k, size=(n, 11)) for k, n in enumerate((4, 1, 7))]
-    runs = [{"n_spikes": len(g), "mean_response": g.mean(0).tolist(),
-             "se_response": (g.std(0, ddof=1) / np.sqrt(len(g))).tolist()
-             if len(g) > 1 else None} for g in groups]
-    runs.append({"n_spikes": 0, "mean_response": None})        # skipped
-    pooled = pool_impulse_responses(runs)
-    allp = np.concatenate(groups)
-    assert pooled["n_spikes"] == len(allp) and pooled["n_runs"] == 3
-    np.testing.assert_allclose(pooled["mean_response"], allp.mean(0))
+    events = {f"2020-01-{d:02d}": rng.normal(d, 1, 11) for d in range(1, 9)}
+    runs = []
+    for seed in range(3):                         # 3 seeds, same 8 events
+        noise = rng.normal(0, 0.1, (8, 11))
+        runs.append({"spike_dates": list(events),
+                     "paths": (np.stack(list(events.values())) + noise).tolist()})
+    runs.append({"n_spikes": 0, "paths": [], "spike_dates": []})   # skipped
+    pooled = pool_impulse_by_event(runs)
+    ev = np.stack([np.mean([np.asarray(r["paths"])[i] for r in runs[:3]], axis=0)
+                   for i in range(8)])
+    assert pooled["n_spikes"] == 8 and pooled["n_runs"] == 3
+    np.testing.assert_allclose(pooled["mean_response"], ev.mean(0))
     np.testing.assert_allclose(pooled["se_response"],
-                               allp.std(0, ddof=1) / np.sqrt(len(allp)))
-    assert pool_impulse_responses([])["mean_response"] is None
+                               ev.std(0, ddof=1) / np.sqrt(8))
+    assert pool_impulse_by_event([])["mean_response"] is None
+
+
+def test_summarize_exposure_vix_clusters():
+    diag = pd.DataFrame({"cell": "c", "seed": np.repeat(range(4), 3),
+                         "fold": np.tile(range(3), 4),
+                         "beta": np.tile([-1.0, -2.0, -3.0], 4),
+                         "pvalue": 0.01})
+    out = summarize_exposure_vix(diag).loc["c"]
+    assert out["n_runs"] == 12 and out["beta_mean"] == -2.0
+    assert out["beta_se_seeds"] == 0.0             # identical seed means
+    assert np.isclose(out["beta_se_folds"], 1 / np.sqrt(3))
+    assert out["frac_sig_negative"] == 1.0 and out["folds_mean_negative"] == 3

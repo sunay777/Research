@@ -248,7 +248,8 @@ def _load_policy(run_dir: Path, features, cfg: Config):
 
 def stage_report(cfg0: Config, features, folds, results: Path):
     from exo_portfolio.eval.diagnostics import (diagnostics_report,
-                                                pool_impulse_responses)
+                                                pool_impulse_by_event,
+                                                summarize_exposure_vix)
     from exo_portfolio.eval.regimes import (label_stressed_vix,
                                             regime_conditional_metrics)
     from exo_portfolio.eval.stats import compare_cells, seed_fold_dispersion
@@ -322,17 +323,17 @@ def stage_report(cfg0: Config, features, folds, results: Path):
         if "exposure" in s.columns:
             d = diagnostics_report(s["exposure"], vix)
             diag_rows.append({"run_id": run_dir.name, "cell": run_cfg.cell,
+                              "seed": run_cfg.seed, "fold": run_cfg.fold,
                               **d["exposure_vix"],
                               "ir_n_spikes": d["impulse_response"]["n_spikes"],
                               "ir_cum10d": d["impulse_response"]["cumulative_10d"]})
-            if run_cfg.seed == 0:
-                # one row / response per (cell, fold); pooled across folds below
-                betas.append({"cell": run_cfg.cell, "fold": run_cfg.fold,
-                              "beta": d["exposure_vix"]["beta"],
-                              "se": abs(d["exposure_vix"]["beta"]) /
-                                    max(np.sqrt(d["exposure_vix"]["n"]), 1)})
-                responses.setdefault(run_cfg.cell, []).append(
-                    d["impulse_response"])
+            # every seed x fold; pooled after the loop (seeds averaged first —
+            # they are replicate policies on the same market data)
+            betas.append({"cell": run_cfg.cell, "seed": run_cfg.seed,
+                          "fold": run_cfg.fold,
+                          "beta": d["exposure_vix"]["beta"]})
+            responses.setdefault(run_cfg.cell, []).append(
+                d["impulse_response"])
 
         # J.5 cost sensitivity: re-evaluate the saved policy on its fold's
         # test window at three cost levels
@@ -349,11 +350,13 @@ def stage_report(cfg0: Config, features, folds, results: Path):
 
     pd.DataFrame(regime_rows).to_csv(tables / "regime_conditional.csv", index=False)
     if diag_rows:
-        pd.DataFrame(diag_rows).to_csv(tables / "diagnostics.csv", index=False)
+        diag_df = pd.DataFrame(diag_rows)
+        diag_df.to_csv(tables / "diagnostics.csv", index=False)
+        summarize_exposure_vix(diag_df).to_csv(tables / "mechanism_summary.csv")
     if cost_rows:
         pd.DataFrame(cost_rows).to_csv(tables / "cost_sensitivity.csv", index=False)
-    # seed-0 impulse responses pooled over every test fold (per-spike exact)
-    responses = {cell: pool_impulse_responses(rs)
+    # all seeds x folds, clustered by spike event
+    responses = {cell: pool_impulse_by_event(rs)
                  for cell, rs in responses.items()}
     (tables / "_diag_cache.json").write_text(json.dumps(
         {"betas": betas, "responses": responses}, default=float))

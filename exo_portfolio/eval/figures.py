@@ -171,14 +171,18 @@ def fig_equity_curves(results_root: str | Path, out: Path,
 
 def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
     """Bar chart of exposure~VIX beta per cell (J.4 mechanism evidence).
-    `betas` columns: cell, beta, se (optional)."""
+    `betas` columns: cell, beta, and either fold (one row per run: seeds are
+    averaged within each fold, error bar = 95% CI across folds) or se."""
     if betas.empty:
         return None
     fig, ax = plt.subplots(figsize=(4.6, 3.2))
     order = [c for c in CELL_COLORS if c in set(betas["cell"])]
-    g = betas.groupby("cell")["beta"]
-    if g.size().max() > 1:
-        # one row per (cell, fold): plot the across-fold mean, SE across folds
+    n_seeds = betas["seed"].nunique() if "seed" in betas else 1
+    if "fold" in betas and betas.groupby("cell").size().max() > 1:
+        # seeds are replicate policies on the same market window: average
+        # them within each fold, then the SE is across folds
+        per_fold = betas.groupby(["cell", "fold"])["beta"].mean()
+        g = per_fold.groupby("cell")
         sub = pd.DataFrame({"beta": g.mean(),
                             "se": g.std(ddof=1) / np.sqrt(g.size())}).loc[order]
     else:
@@ -193,15 +197,17 @@ def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
             bar.set_edgecolor(SURFACE)
     ax.axhline(0, color="#c3c2b7", linewidth=1)
     ax.set_ylabel("exposure ~ VIX slope (β)")
-    ax.set_title("De-risking response to VIX by cell")
+    ax.set_title("De-risking response to VIX by cell"
+                 + (f"\n({n_seeds} seeds averaged per fold; ±95% CI across folds)"
+                    if n_seeds > 1 else ""))
     _style_ax(ax)
     return _save(fig, out)
 
 
 def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
-    """Mean exposure change after VIX spikes per cell (seed 0), pooled over
-    every test fold. `responses[cell]` = output of pool_impulse_responses
-    (same shape as vix_spike_impulse_response, plus n_runs)."""
+    """Mean exposure change after VIX spikes per cell, pooled over every
+    seed x fold run and clustered by spike event. `responses[cell]` = output
+    of pool_impulse_by_event (vix_spike_impulse_response's shape + n_runs)."""
     # RL cells only: baselines are in the cache/tables, but 11 grey lines (and
     # vol_overlay's mechanical de-risking) would swamp the cells' scale
     valid = {c: responses[c] for c in CELL_COLORS
@@ -215,7 +221,7 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
         ax.plot(days, r["mean_response"], color=c, linewidth=2,
                 linestyle=CELL_LINESTYLES.get(cell, "-"),
                 marker="o", markersize=3.5,
-                label=f"{cell} (n={r['n_spikes']} spikes)")
+                label=f"{cell} (n={r['n_spikes']} events)")
         if r.get("se_response"):
             se = np.asarray(r["se_response"])
             m = np.asarray(r["mean_response"])
@@ -226,8 +232,9 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
     ax.set_ylabel("Δ exposure vs day −1")
     n_runs = max((r.get("n_runs", 1) for r in valid.values()), default=1)
     ax.set_title("Impulse response of exposure to VIX spikes"
-                 + (f" (seed 0, pooled over {n_runs} folds; ±95% CI)"
-                    if n_runs > 1 else ""))
+                 + (f"\n({n_runs} runs per cell, seed-averaged per event; "
+                    "±95% CI across events)" if n_runs > 1 else ""))
     _style_ax(ax)
-    ax.legend(frameon=False, fontsize=8, labelcolor=INK)
+    ax.legend(frameon=False, fontsize=8, labelcolor=INK,
+              loc="upper left", bbox_to_anchor=(1.01, 1))
     return _save(fig, out)
