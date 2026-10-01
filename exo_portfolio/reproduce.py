@@ -247,7 +247,8 @@ def _load_policy(run_dir: Path, features, cfg: Config):
 
 
 def stage_report(cfg0: Config, features, folds, results: Path):
-    from exo_portfolio.eval.diagnostics import diagnostics_report
+    from exo_portfolio.eval.diagnostics import (diagnostics_report,
+                                                pool_impulse_responses)
     from exo_portfolio.eval.regimes import (label_stressed_vix,
                                             regime_conditional_metrics)
     from exo_portfolio.eval.stats import compare_cells, seed_fold_dispersion
@@ -325,11 +326,13 @@ def stage_report(cfg0: Config, features, folds, results: Path):
                               "ir_n_spikes": d["impulse_response"]["n_spikes"],
                               "ir_cum10d": d["impulse_response"]["cumulative_10d"]})
             if run_cfg.seed == 0:
-                betas.append({"cell": run_cfg.cell,
+                # one row / response per (cell, fold); pooled across folds below
+                betas.append({"cell": run_cfg.cell, "fold": run_cfg.fold,
                               "beta": d["exposure_vix"]["beta"],
                               "se": abs(d["exposure_vix"]["beta"]) /
                                     max(np.sqrt(d["exposure_vix"]["n"]), 1)})
-                responses[run_cfg.cell] = d["impulse_response"]
+                responses.setdefault(run_cfg.cell, []).append(
+                    d["impulse_response"])
 
         # J.5 cost sensitivity: re-evaluate the saved policy on its fold's
         # test window at three cost levels
@@ -349,6 +352,9 @@ def stage_report(cfg0: Config, features, folds, results: Path):
         pd.DataFrame(diag_rows).to_csv(tables / "diagnostics.csv", index=False)
     if cost_rows:
         pd.DataFrame(cost_rows).to_csv(tables / "cost_sensitivity.csv", index=False)
+    # seed-0 impulse responses pooled over every test fold (per-spike exact)
+    responses = {cell: pool_impulse_responses(rs)
+                 for cell, rs in responses.items()}
     (tables / "_diag_cache.json").write_text(json.dumps(
         {"betas": betas, "responses": responses}, default=float))
     print(f"[report] tables -> {tables} "

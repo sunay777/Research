@@ -7,6 +7,7 @@ import pytest
 
 from exo_portfolio.eval.diagnostics import (exposure_vix_regression,
                                             find_vix_spikes,
+                                            pool_impulse_responses,
                                             vix_spike_impulse_response)
 from exo_portfolio.eval.regimes import (label_stressed_vix,
                                         regime_conditional_metrics)
@@ -175,3 +176,20 @@ def test_impulse_response_detects_derisking():
     flat = pd.Series(0.8, index=DATES)
     res_flat = vix_spike_impulse_response(flat, vix)
     assert max(abs(x) for x in res_flat["mean_response"]) == pytest.approx(0.0)
+
+
+def test_pool_impulse_responses_equals_stacking():
+    """Pooling per-run (n, mean, se) must equal stacking every spike path."""
+    rng = np.random.default_rng(1)
+    groups = [rng.normal(k, 1 + k, size=(n, 11)) for k, n in enumerate((4, 1, 7))]
+    runs = [{"n_spikes": len(g), "mean_response": g.mean(0).tolist(),
+             "se_response": (g.std(0, ddof=1) / np.sqrt(len(g))).tolist()
+             if len(g) > 1 else None} for g in groups]
+    runs.append({"n_spikes": 0, "mean_response": None})        # skipped
+    pooled = pool_impulse_responses(runs)
+    allp = np.concatenate(groups)
+    assert pooled["n_spikes"] == len(allp) and pooled["n_runs"] == 3
+    np.testing.assert_allclose(pooled["mean_response"], allp.mean(0))
+    np.testing.assert_allclose(pooled["se_response"],
+                               allp.std(0, ddof=1) / np.sqrt(len(allp)))
+    assert pool_impulse_responses([])["mean_response"] is None

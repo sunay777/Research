@@ -199,10 +199,13 @@ def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
 
 
 def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
-    """Mean exposure change after VIX spikes per cell.
-    `responses[cell]` = output of vix_spike_impulse_response."""
-    valid = {c: r for c, r in responses.items()
-             if r and r.get("mean_response") is not None}
+    """Mean exposure change after VIX spikes per cell (seed 0), pooled over
+    every test fold. `responses[cell]` = output of pool_impulse_responses
+    (same shape as vix_spike_impulse_response, plus n_runs)."""
+    # RL cells only: baselines are in the cache/tables, but 11 grey lines (and
+    # vol_overlay's mechanical de-risking) would swamp the cells' scale
+    valid = {c: responses[c] for c in CELL_COLORS
+             if responses.get(c) and responses[c].get("mean_response") is not None}
     if not valid:
         return None
     fig, ax = plt.subplots(figsize=(5.2, 3.4))
@@ -211,7 +214,8 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
         c = CELL_COLORS.get(cell, MUTED)
         ax.plot(days, r["mean_response"], color=c, linewidth=2,
                 linestyle=CELL_LINESTYLES.get(cell, "-"),
-                marker="o", markersize=3.5, label=f"{cell} (n={r['n_spikes']})")
+                marker="o", markersize=3.5,
+                label=f"{cell} (n={r['n_spikes']} spikes)")
         if r.get("se_response"):
             se = np.asarray(r["se_response"])
             m = np.asarray(r["mean_response"])
@@ -220,7 +224,10 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
     ax.axhline(0, color="#c3c2b7", linewidth=1)
     ax.set_xlabel("days after VIX spike")
     ax.set_ylabel("Δ exposure vs day −1")
-    ax.set_title("Impulse response of exposure to VIX spikes")
+    n_runs = max((r.get("n_runs", 1) for r in valid.values()), default=1)
+    ax.set_title("Impulse response of exposure to VIX spikes"
+                 + (f" (seed 0, pooled over {n_runs} folds; ±95% CI)"
+                    if n_runs > 1 else ""))
     _style_ax(ax)
     ax.legend(frameon=False, fontsize=8, labelcolor=INK)
     return _save(fig, out)

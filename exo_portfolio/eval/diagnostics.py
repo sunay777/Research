@@ -71,6 +71,37 @@ def vix_spike_impulse_response(exposure: pd.Series, vix: pd.Series,
             if len(paths) > 1 else None}
 
 
+def pool_impulse_responses(responses: list[dict]) -> dict:
+    """Pool several vix_spike_impulse_response outputs (e.g. one run per
+    test fold) into one, exactly as if every spike path had been stacked.
+
+    Each run's (n, mean, se) recovers its per-spike sum of squares
+    (s^2 = se^2 * n), so the pooled per-spike variance is the usual
+    within-run + between-run decomposition and the pooled SE is per-spike,
+    over all N spikes. Runs with no spikes are skipped; a run with one spike
+    (se None) contributes its mean and zero within-run variance."""
+    runs = [r for r in responses if r and r.get("mean_response") is not None]
+    if not runs:
+        return {"n_spikes": 0, "mean_response": None, "cumulative_10d": None,
+                "n_runs": 0}
+    n = np.array([r["n_spikes"] for r in runs], dtype=float)
+    m = np.stack([np.asarray(r["mean_response"], dtype=float) for r in runs])
+    se = np.stack([np.asarray(r["se_response"], dtype=float)
+                   if r.get("se_response") is not None
+                   else np.zeros(m.shape[1]) for r in runs])
+    N = n.sum()
+    mean = (n[:, None] * m).sum(axis=0) / N
+    within = ((n - 1)[:, None] * se ** 2 * n[:, None]).sum(axis=0)
+    between = (n[:, None] * (m - mean) ** 2).sum(axis=0)
+    out = {"n_spikes": int(N), "mean_response": mean.tolist(),
+           "cumulative_10d": float(mean[-1]), "n_runs": len(runs),
+           "se_response": None}
+    if N > 1:
+        var = (within + between) / (N - 1)
+        out["se_response"] = np.sqrt(var / N).tolist()
+    return out
+
+
 def diagnostics_report(exposure: pd.Series, vix: pd.Series) -> dict:
     """Both J.4 diagnostics in one row (per run, computed on the test window)."""
     return {"exposure_vix": exposure_vix_regression(exposure, vix),
