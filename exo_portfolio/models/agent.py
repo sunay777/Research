@@ -50,10 +50,11 @@ class _FeatureStream(nn.Module):
         self.mode = (cfg.encoder, cfg.exo_mode)
         self.d_lat = cfg.d_endo + cfg.d_exo
 
+        h = cfg.stream_hidden
         if self.mode == ("single", "none"):
-            self.net = mlp([d_endo_in, 128, self.d_lat])
+            self.net = mlp([d_endo_in, h, self.d_lat])
         elif self.mode == ("single", "concat"):
-            self.net = mlp([d_endo_in + d_exo_in, 128, self.d_lat])
+            self.net = mlp([d_endo_in + d_exo_in, h, self.d_lat])
         else:                                   # ("dual", "split")
             n_market = d_exo_in - n_assets * price_window
             assert n_market > 0, "exo_actor smaller than the asset block"

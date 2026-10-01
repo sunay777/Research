@@ -52,6 +52,9 @@ class ModelCfg:
     exo_mode: str = "split"          # {"none", "concat", "split"}
     d_endo: int = 32
     d_exo: int = 128
+    # hidden width of the single-encoder MLP stream (single+none / +concat);
+    # widened only by capacity-control presets (cell0cw)
+    stream_hidden: int = 128
 
 
 @dataclass

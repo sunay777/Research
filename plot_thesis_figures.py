@@ -43,6 +43,7 @@ FOLD_LINE = "#9d9c94"
 CELL_LABELS = {
     "cell0": "cell0 (no exo)",
     "cell0c": "cell0c (no exo, custom PPO)",
+    "cell0cw": "cell0cw (no exo, custom PPO, cell4-size)",
     "cell1": "cell1 (monolithic)",
     "cell2": "cell2",
     "cell3": "cell3",

@@ -268,17 +268,19 @@ def stage_report(cfg0: Config, features, folds, results: Path):
     summary_table(df).to_csv(tables / "grid_summary_test.csv")
 
     # paired stats across the architecture grid (matched by seed+fold)
-    # (cell0c = cell0 on the custom PPO; absent until its runs exist, and
-    # compare_cells skips any baseline with no results, so this is a no-op then)
-    grid_cells = [c for c in ("cell0", "cell0c", "cell1", "cell2", "cell3", "cell4")
+    # (cell0c = cell0 on the custom PPO, cell0cw = cell0c at cell4's size;
+    # absent until their runs exist, and compare_cells skips any baseline with
+    # no results, so this is a no-op then)
+    controls = ("cell0c", "cell0cw")
+    grid_cells = [c for c in ("cell0", *controls, "cell1", "cell2", "cell3", "cell4")
                   if c in df["cell"].values]
-    # a partially-synced cell0c must not gate the main grid's stats
-    gate_cells = [c for c in grid_cells if c != "cell0c"]
+    # partially-synced control cells must not gate the main grid's stats
+    gate_cells = [c for c in grid_cells if c not in controls]
     n_pairs = (df[df["split"] == "test"]
                .groupby("cell").size().reindex(gate_cells).min()
                if gate_cells else 0)
     if n_pairs >= 3:
-        compare_cells(df, baselines=("cell0", "cell0c", "cell1", "cell2", "cell3")
+        compare_cells(df, baselines=("cell0", *controls, "cell1", "cell2", "cell3")
                       ).to_csv(tables / "cell_comparisons_holm.csv", index=False)
         seed_fold_dispersion(df).to_csv(tables / "dispersion.csv")
         # implementation control: does switching SB3 -> custom PPO alone move cell0?
@@ -287,6 +289,12 @@ def stage_report(cfg0: Config, features, folds, results: Path):
             if len(vs_impl):
                 vs_impl.to_csv(tables / "cell_comparisons_vs_cell0c_holm.csv",
                                index=False)
+        # capacity control: does width alone move cell0c?
+        if "cell0cw" in df["cell"].values and "cell0c" in df["cell"].values:
+            vs_cap = compare_cells(df, target="cell0cw", baselines=("cell0c",))
+            if len(vs_cap):
+                vs_cap.to_csv(tables / "cell_comparisons_vs_cell0cw_holm.csv",
+                              index=False)
     else:
         print(f"[report] only {n_pairs} matched grid pairs — stats need >=3, skipped")
 

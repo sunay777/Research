@@ -19,6 +19,12 @@ CELL_PRESETS: dict[str, dict] = {
     # SB3-vs-custom implementation confound). Deliberately NOT in
     # train.SB3_CELLS, so it dispatches to the custom-PPO branch.
     "cell0c": dict(encoder="single", critic="symmetric", exo_mode="none"),
+    # cell0c widened to cell4's capacity (controls for network size): one
+    # hidden layer of 468 units gives 104,236 actor / 213,917 total params on
+    # the DJIA-30 universe vs cell4's 104,284 / 214,205 (-0.13%). Width is the
+    # only change from cell0c.
+    "cell0cw": dict(encoder="single", critic="symmetric", exo_mode="none",
+                    stream_hidden=468),
 }
 
 VALID_COMBOS = {("single", "none"), ("single", "concat"), ("dual", "split")}
@@ -29,4 +35,5 @@ def model_cfg_for_cell(cell: str, base: ModelCfg | None = None) -> ModelCfg:
     preset = CELL_PRESETS[cell]
     return ModelCfg(encoder=preset["encoder"], critic=preset["critic"],
                     exo_mode=preset["exo_mode"],
-                    d_endo=base.d_endo, d_exo=base.d_exo)
+                    d_endo=base.d_endo, d_exo=base.d_exo,
+                    stream_hidden=preset.get("stream_hidden", ModelCfg.stream_hidden))

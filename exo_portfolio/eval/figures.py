@@ -22,13 +22,14 @@ import matplotlib.pyplot as plt
 CELL_COLORS = {
     "cell0": "#2a78d6",   # blue
     "cell0c": "#2a78d6",  # cell0 on the custom PPO: same blue, dashed
+    "cell0cw": "#2a78d6", # cell0c at cell4's size: same blue, dotted
     "cell1": "#eb6834",   # orange
     "cell2": "#1baf7a",   # aqua
     "cell3": "#eda100",   # yellow
     "cell4": "#e87ba4",   # magenta
 }
 # a cell that shares another's color is told apart by dash pattern
-CELL_LINESTYLES = {"cell0c": "--"}
+CELL_LINESTYLES = {"cell0c": "--", "cell0cw": ":"}
 CLASSICAL_COLOR = "#898781"      # muted — classical baselines are context
 INK = "#0b0b0b"
 MUTED = "#898781"
@@ -193,7 +194,7 @@ def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
                   yerr=err, ecolor=MUTED, capsize=3, error_kw={"linewidth": 1})
     for bar, c in zip(bars, order):     # shared-color cells: hatched bar
         if c in CELL_LINESTYLES:
-            bar.set_hatch("///")
+            bar.set_hatch("///" if CELL_LINESTYLES[c] == "--" else "...")
             bar.set_edgecolor(SURFACE)
     ax.axhline(0, color="#c3c2b7", linewidth=1)
     ax.set_ylabel("exposure ~ VIX slope (β)")
