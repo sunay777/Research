@@ -34,7 +34,8 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 
 from exo_portfolio.eval.figures import (CELL_COLORS, CELL_LINESTYLES, INK,
-                                        MUTED, SURFACE, _save, _style_ax)
+                                        MUTED, SERIES_LW, SURFACE, _save,
+                                        _style_ax)
 from exo_portfolio.eval.regimes import label_stressed_vix
 
 STRESS_FILL = "#f3d9cf"          # soft warm tint: regime context, not a series
@@ -136,8 +137,8 @@ def direct_labels(ax, items, x, min_gap_frac=0.045):
     for i in range(1, len(ys)):
         ys[i] = max(ys[i], ys[i - 1] + gap)
     for (v, text, color), y in zip(items, ys):
-        ax.plot([x], [v], marker="o", ms=4.5, color=color, mec=SURFACE,
-                mew=1.2, zorder=6, clip_on=False)
+        ax.plot([x], [v], marker="o", ms=3.5, color=color, mec=SURFACE,
+                mew=0.8, zorder=6, clip_on=False)
         ax.annotate(text, xy=(x, np.exp(y)), xytext=(8, 0),
                     textcoords="offset points", va="center", fontsize=7.5,
                     color=INK, annotation_clip=False)
@@ -155,13 +156,13 @@ def fig_market_regimes(gspc: pd.Series, stressed: pd.Series, folds, out: Path):
 
     t0 = folds[0][1]
     ax.axvspan(px.index[0], t0, color="#000000", alpha=0.035, lw=0, zorder=0)
-    ax.plot(wealth.index, wealth.values, color=INK, lw=1.3, zorder=3)
+    ax.plot(wealth.index, wealth.values, color=INK, lw=SERIES_LW, zorder=3)
     lo, hi = wealth.min(), wealth.max()
     log_axis(ax, lo, hi)
     ax.set_ylim(lo * 0.9, hi * 1.12)
 
     for f, a, b in folds:
-        ax.axvline(a, color=FOLD_LINE, lw=0.9, ls=(0, (4, 3)), zorder=2)
+        ax.axvline(a, color=FOLD_LINE, lw=0.7, ls=(0, (4, 3)), zorder=2)
         mid = a + (b - a) / 2
         ax.text(mid, 0.035, f"test F{f}", transform=ax.get_xaxis_transform(),
                 ha="center", fontsize=7.5, color=MUTED)
@@ -198,7 +199,7 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
     a0, b1 = folds[0][1], folds[-1][2]
     shade_regime(ax, stressed, a0, b1)
     for f, a, b in folds[1:]:
-        ax.axvline(a, color=FOLD_LINE, lw=0.9, ls=(0, (4, 3)), zorder=2)
+        ax.axvline(a, color=FOLD_LINE, lw=0.7, ls=(0, (4, 3)), zorder=2)
     for f, a, b in folds:
         ax.text(a + (b - a) / 2, 0.025, f"F{f}", transform=ax.get_xaxis_transform(),
                 ha="center", fontsize=7.5, color=MUTED)
@@ -208,7 +209,7 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
         if cell not in set(df["cell"]):
             continue
         w = stitched_paths(df, cell).iloc[:, 0]
-        ax.plot(w.index, w.values, color=color, lw=1.4, ls=ls, zorder=3,
+        ax.plot(w.index, w.values, color=color, lw=SERIES_LW, ls=ls, zorder=3,
                 label=label)
         ends.append((w.iloc[-1], label, color))
         allv.append(w.values)
@@ -224,7 +225,7 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
             ax.fill_between(W.index, q10, q90, color=c, alpha=0.18, lw=0,
                             zorder=1, label=f"{cell} seed range (10th–90th pct.)")
             allv += [q10.values, q90.values]
-        ax.plot(med.index, med.values, color=c, lw=2, zorder=4,
+        ax.plot(med.index, med.values, color=c, lw=SERIES_LW, zorder=4,
                 ls=CELL_LINESTYLES.get(cell, "-"),
                 label=CELL_LABELS.get(cell, cell))
         ends.append((med.iloc[-1], cell, c))

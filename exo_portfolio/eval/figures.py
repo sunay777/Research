@@ -30,6 +30,9 @@ CELL_COLORS = {
 }
 # a cell that shares another's color is told apart by dash pattern
 CELL_LINESTYLES = {"cell0c": "--", "cell0cw": ":"}
+# shared stroke weights: thin series stay legible where many overlap
+SERIES_LW = 1.0
+MARKER_SIZE = 2.5
 CLASSICAL_COLOR = "#898781"      # muted — classical baselines are context
 INK = "#0b0b0b"
 MUTED = "#898781"
@@ -79,7 +82,7 @@ def fig_learning_curves(results_root: str | Path, out: Path) -> Path | None:
     for cell, g in df.groupby("cell"):
         agg = g.groupby("env_steps")["mean_reward"].agg(["mean", "std"])
         c = CELL_COLORS.get(cell, MUTED)
-        ax.plot(agg.index, agg["mean"], color=c, linewidth=2, label=cell,
+        ax.plot(agg.index, agg["mean"], color=c, linewidth=SERIES_LW, label=cell,
                 linestyle=CELL_LINESTYLES.get(cell, "-"))
         if agg["std"].notna().any():
             ax.fill_between(agg.index, agg["mean"] - agg["std"],
@@ -112,15 +115,15 @@ def fig_synthetic_shift(csv_path: str | Path, out: Path) -> Path | None:
             agg = g.groupby("shift")[col].agg(["mean", "std", "count"])
             c = CELL_COLORS.get(cell, MUTED)
             ci = 1.96 * agg["std"] / np.sqrt(agg["count"].clip(lower=1))
-            ax.plot(agg.index, agg["mean"], color=c, linewidth=2,
+            ax.plot(agg.index, agg["mean"], color=c, linewidth=SERIES_LW,
                     linestyle=CELL_LINESTYLES.get(cell, "-"),
-                    marker="o", markersize=4, label=cell)
+                    marker="o", markersize=MARKER_SIZE, label=cell)
             if agg["std"].notna().any():
                 ax.fill_between(agg.index, agg["mean"] - ci, agg["mean"] + ci,
                                 color=c, alpha=0.15, linewidth=0)
         if col == "mean_reward" and "oracle_mean_reward" in df.columns:
             o = df.groupby("shift")["oracle_mean_reward"].mean()
-            ax.plot(o.index, o.values, color=MUTED, linewidth=1.5,
+            ax.plot(o.index, o.values, color=MUTED, linewidth=SERIES_LW,
                     linestyle="--", label="oracle")
         ax.set_xlabel("shift magnitude s")
         ax.set_ylabel(col.replace("_", " "))
@@ -141,7 +144,7 @@ def fig_equity_curves(results_root: str | Path, out: Path,
         if not p.exists():
             continue
         s = pd.read_csv(p, parse_dates=["date"]).set_index("date")
-        ax.plot(s.index, s["log_return"].cumsum(), linewidth=2,
+        ax.plot(s.index, s["log_return"].cumsum(), linewidth=SERIES_LW,
                 color=CELL_COLORS[cell], label=cell,
                 linestyle=CELL_LINESTYLES.get(cell, "-"))
         plotted = True
@@ -191,7 +194,7 @@ def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
     colors = [CELL_COLORS[c] for c in order]
     err = 1.96 * sub["se"] if "se" in sub else None
     bars = ax.bar(order, sub["beta"], color=colors, width=0.6,
-                  yerr=err, ecolor=MUTED, capsize=3, error_kw={"linewidth": 1})
+                  yerr=err, ecolor=MUTED, capsize=3, error_kw={"linewidth": 0.8})
     for bar, c in zip(bars, order):     # shared-color cells: hatched bar
         if c in CELL_LINESTYLES:
             bar.set_hatch("///" if CELL_LINESTYLES[c] == "--" else "...")
@@ -219,9 +222,9 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
     for cell, r in valid.items():
         days = np.arange(len(r["mean_response"]))
         c = CELL_COLORS.get(cell, MUTED)
-        ax.plot(days, r["mean_response"], color=c, linewidth=2,
+        ax.plot(days, r["mean_response"], color=c, linewidth=SERIES_LW,
                 linestyle=CELL_LINESTYLES.get(cell, "-"),
-                marker="o", markersize=3.5,
+                marker="o", markersize=MARKER_SIZE,
                 label=f"{cell} (n={r['n_spikes']} events)")
         if r.get("se_response"):
             se = np.asarray(r["se_response"])
