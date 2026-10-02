@@ -12,6 +12,15 @@ Writes into <results>/figures/:
                           RL cells: median across 10 seeds, with a 10th-90th
                           percentile seed band for cell4. Baselines are
                           deterministic (one path).
+  oos_final_by_seed.png   Final stitched wealth of every seed per model, vs
+                          the S&P 500 buy-and-hold line.
+
+and into <results>/tables/:
+  oos_stitched_by_seed.csv   one row per (model, seed) stitched path: final
+                             wealth, annual return, vol, Sharpe, max drawdown,
+                             mean exposure / turnover, beats_sp500
+  oos_stitched_summary.csv   one row per model: median across seeds (min/max
+                             final wealth, number of seeds beating the S&P 500)
 
 Style (palette, axes, surface) is shared with exo_portfolio.eval.figures so
 these sit alongside the pipeline's figures without looking different.
@@ -253,6 +262,77 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
     return _save(fig, out)
 
 
+def stitched_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per (model, seed) for the stitched walk-forward test path."""
+    rows = []
+    for cell, sub in df.groupby("cell"):
+        lr = sub.pivot_table(index="date", columns="seed",
+                             values="log_return").sort_index()
+        years = len(lr) / 252
+        W = np.exp(lr.cumsum())
+        exp = sub.groupby("seed")["exposure"].mean()
+        turn = sub.groupby("seed")["turnover"].mean()
+        for seed in lr.columns:
+            r = lr[seed]
+            rows.append({
+                "model": cell, "seed": seed,
+                "final_wealth": W[seed].iloc[-1],
+                "annual_return": np.exp(r.sum() / years) - 1,
+                "annual_vol": r.std() * np.sqrt(252),
+                "sharpe": r.mean() / r.std() * np.sqrt(252),
+                "max_drawdown": (W[seed] / W[seed].cummax() - 1).min(),
+                "mean_exposure": exp[seed], "mean_daily_turnover": turn[seed],
+            })
+    out = pd.DataFrame(rows)
+    bh = out.loc[out["model"] == "buy_and_hold_index", "final_wealth"]
+    if len(bh):
+        out["beats_sp500"] = out["final_wealth"] > bh.iloc[0]
+    return out
+
+
+def stitched_summary(by_seed: pd.DataFrame) -> pd.DataFrame:
+    g = by_seed.groupby("model")
+    out = g.median(numeric_only=True).drop(columns=["seed", "beats_sp500"],
+                                           errors="ignore")
+    out.insert(0, "n_seeds", g.size())
+    out.insert(2, "final_wealth_min", g["final_wealth"].min())
+    out.insert(3, "final_wealth_max", g["final_wealth"].max())
+    if "beats_sp500" in by_seed:
+        out["seeds_beating_sp500"] = g["beats_sp500"].sum().astype(int)
+        out.loc["buy_and_hold_index", "seeds_beating_sp500"] = np.nan
+    return out.sort_values("final_wealth", ascending=False)
+
+
+def fig_final_by_seed(by_seed: pd.DataFrame, out: Path):
+    """Strip plot: each seed's final stitched wealth per model."""
+    order = (by_seed.groupby("model")["final_wealth"].median()
+             .sort_values().index.tolist())
+    fig, ax = plt.subplots(figsize=(7.2, 0.32 * len(order) + 1.2))
+    rng = np.random.default_rng(0)
+    for i, m in enumerate(order):
+        v = by_seed.loc[by_seed["model"] == m, "final_wealth"].values
+        c = CELL_COLORS.get(m, MUTED)
+        jitter = rng.uniform(-0.12, 0.12, len(v)) if len(v) > 1 else 0
+        ax.scatter(v, i + jitter, s=14, color=c, alpha=0.85, lw=0, zorder=3)
+        ax.plot([np.median(v)] * 2, [i - 0.28, i + 0.28], color=INK,
+                lw=SERIES_LW, zorder=4)
+    bh = by_seed.loc[by_seed["model"] == "buy_and_hold_index", "final_wealth"]
+    if len(bh):
+        ax.axvline(bh.iloc[0], color=INK, lw=0.7, ls=(0, (4, 3)), zorder=2)
+        ax.text(bh.iloc[0], len(order) - 0.4, " S&P 500 buy & hold",
+                fontsize=7.5, color=INK, va="bottom")
+    ax.set_xscale("log")
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
+    ax.set_yticks(range(len(order)))
+    ax.set_yticklabels([CELL_LABELS.get(m, BASELINES.get(m, (m,))[0])
+                        for m in order])
+    ax.set_xlabel("Final growth of $1, walk-forward out-of-sample (log scale)")
+    ax.set_title("Final wealth per seed (dots) and median (bar)", loc="left")
+    _style_ax(ax)
+    ax.grid(axis="y", visible=False)
+    return _save(fig, out)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results")
@@ -268,9 +348,16 @@ def main(argv=None):
     stressed = label_stressed_vix(vix)
     folds = fold_starts(df)
 
-    figs = results / "figures"
+    figs, tables = results / "figures", results / "tables"
+    tables.mkdir(parents=True, exist_ok=True)
+    by_seed = stitched_stats(df)
+    by_seed.to_csv(tables / "oos_stitched_by_seed.csv", index=False)
+    stitched_summary(by_seed).to_csv(tables / "oos_stitched_summary.csv")
+    print("wrote", tables / "oos_stitched_by_seed.csv")
+    print("wrote", tables / "oos_stitched_summary.csv")
     for p in (fig_market_regimes(gspc, stressed, folds, figs / "market_regimes.png"),
-              fig_oos_equity(df, stressed, folds, figs / "oos_equity_curves.png")):
+              fig_oos_equity(df, stressed, folds, figs / "oos_equity_curves.png"),
+              fig_final_by_seed(by_seed, figs / "oos_final_by_seed.png")):
         print("wrote", p)
 
 
