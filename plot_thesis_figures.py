@@ -13,14 +13,18 @@ Writes into <results>/figures/:
                           percentile seed band for cell4. Baselines are
                           deterministic (one path).
   oos_final_by_seed.png   Final stitched wealth of every seed per model, vs
-                          the S&P 500 buy-and-hold line.
+                          the equal-weight (1/N) benchmark line.
 
 and into <results>/tables/:
   oos_stitched_by_seed.csv   one row per (model, seed) stitched path: final
                              wealth, annual return, vol, Sharpe, max drawdown,
-                             mean exposure / turnover, beats_sp500
+                             mean exposure / turnover, beats_equal_weight
   oos_stitched_summary.csv   one row per model: median across seeds (min/max
-                             final wealth, number of seeds beating the S&P 500)
+                             final wealth, number of seeds beating equal weight)
+
+Benchmark: equal weight (1/N) on the SAME 29 stocks — same universe, costs and
+survivorship bias as the agents. The S&P 500 (^GSPC) is a price index (no
+dividends, no costs, different universe) and is drawn as context only.
 
 Style (palette, axes, surface) is shared with exo_portfolio.eval.figures so
 these sit alongside the pipeline's figures without looking different.
@@ -59,11 +63,25 @@ CELL_LABELS = {
     "cell3": "cell3",
     "cell4": "cell4",
 }
-# baselines are context: neutral inks, told apart by dash pattern
+# baselines: neutral inks, told apart by dash pattern. Equal weight on the
+# same 29 stocks is the headline benchmark; the S&P line is context only.
+BENCHMARK = "equal_weight"
 BASELINES = {
-    "buy_and_hold_index": ("S&P 500 buy & hold", "#3d3c38", "-"),
-    "equal_weight": ("Equal weight (1/N)", "#6f6e68", (0, (5, 2))),
+    "equal_weight": ("Equal weight 1/N (benchmark)", "#3d3c38", "-"),
     "inverse_vol": ("Inverse volatility", "#6f6e68", (0, (1, 1.6))),
+    "buy_and_hold_index": ("S&P 500 price index, no dividends (context)",
+                           "#a3a29b", (0, (5, 2))),
+}
+# display names for the remaining (non-plotted-as-line) baselines
+BASELINE_NAMES = {
+    "random_constant_mix": "Random constant-mix",
+    "random_weight": "Random weights (daily)",
+    "random_action": "Random actions",
+    "min_variance": "Min variance",
+    "max_sharpe": "Max Sharpe",
+    "mean_variance": "Mean-variance",
+    "momentum": "Momentum (top 10)",
+    "vol_overlay": "Vol overlay (1/N, 10% target)",
 }
 BANDED = ("cell4",)   # one band: overlapping bands turn to mud
 
@@ -284,22 +302,23 @@ def stitched_stats(df: pd.DataFrame) -> pd.DataFrame:
                 "mean_exposure": exp[seed], "mean_daily_turnover": turn[seed],
             })
     out = pd.DataFrame(rows)
-    bh = out.loc[out["model"] == "buy_and_hold_index", "final_wealth"]
-    if len(bh):
-        out["beats_sp500"] = out["final_wealth"] > bh.iloc[0]
+    bench = out.loc[out["model"] == BENCHMARK, "final_wealth"]
+    if len(bench):
+        out["beats_equal_weight"] = out["final_wealth"] > bench.iloc[0]
     return out
 
 
 def stitched_summary(by_seed: pd.DataFrame) -> pd.DataFrame:
     g = by_seed.groupby("model")
-    out = g.median(numeric_only=True).drop(columns=["seed", "beats_sp500"],
-                                           errors="ignore")
+    out = g.median(numeric_only=True).drop(
+        columns=["seed", "beats_equal_weight"], errors="ignore")
     out.insert(0, "n_seeds", g.size())
     out.insert(2, "final_wealth_min", g["final_wealth"].min())
     out.insert(3, "final_wealth_max", g["final_wealth"].max())
-    if "beats_sp500" in by_seed:
-        out["seeds_beating_sp500"] = g["beats_sp500"].sum().astype(int)
-        out.loc["buy_and_hold_index", "seeds_beating_sp500"] = np.nan
+    if "beats_equal_weight" in by_seed:
+        out["seeds_beating_equal_weight"] = (g["beats_equal_weight"].sum()
+                                             .astype(int))
+        out.loc[BENCHMARK, "seeds_beating_equal_weight"] = np.nan
     return out.sort_values("final_wealth", ascending=False)
 
 
@@ -316,16 +335,16 @@ def fig_final_by_seed(by_seed: pd.DataFrame, out: Path):
         ax.scatter(v, i + jitter, s=14, color=c, alpha=0.85, lw=0, zorder=3)
         ax.plot([np.median(v)] * 2, [i - 0.28, i + 0.28], color=INK,
                 lw=SERIES_LW, zorder=4)
-    bh = by_seed.loc[by_seed["model"] == "buy_and_hold_index", "final_wealth"]
-    if len(bh):
-        ax.axvline(bh.iloc[0], color=INK, lw=0.7, ls=(0, (4, 3)), zorder=2)
-        ax.text(bh.iloc[0], len(order) - 0.4, " S&P 500 buy & hold",
+    bench = by_seed.loc[by_seed["model"] == BENCHMARK, "final_wealth"]
+    if len(bench):
+        ax.axvline(bench.iloc[0], color=INK, lw=0.7, ls=(0, (4, 3)), zorder=2)
+        ax.text(bench.iloc[0], len(order) - 0.4, " equal weight (benchmark)",
                 fontsize=7.5, color=INK, va="bottom")
     ax.set_xscale("log")
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
     ax.set_yticks(range(len(order)))
-    ax.set_yticklabels([CELL_LABELS.get(m, BASELINES.get(m, (m,))[0])
-                        for m in order])
+    ax.set_yticklabels([CELL_LABELS.get(m) or BASELINE_NAMES.get(m)
+                        or BASELINES.get(m, (m,))[0] for m in order])
     ax.set_xlabel("Final growth of $1, walk-forward out-of-sample (log scale)")
     ax.set_title("Final wealth per seed (dots) and median (bar)", loc="left")
     _style_ax(ax)

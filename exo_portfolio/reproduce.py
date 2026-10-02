@@ -105,7 +105,7 @@ def stage_classical(cfg: Config, features, folds, results: Path,
     across-seed spread); the random baselines get one per (seed, fold) so they
     carry a genuine across-seed distribution."""
     from exo_portfolio.baselines.classical import (buy_and_hold_index,
-                                                   deterministic_target_baselines,
+                                                   deterministic_window_targets,
                                                    random_policy_in_env,
                                                    random_target_baselines,
                                                    simulate_baseline_series)
@@ -121,11 +121,12 @@ def stage_classical(cfg: Config, features, folds, results: Path,
         prices = features.prices.iloc[fold.test_idx]
         t0, t1 = int(fold.test_idx[0]), int(fold.test_idx[-1])
 
-        # deterministic simplex baselines (classical + M10 traditional), seed 0
-        det = deterministic_target_baselines(prices, cfg)
+        # deterministic simplex baselines (classical + M10 traditional), seed 0;
+        # rolling rules get their lookback from pre-fold history
+        det = deterministic_window_targets(features.prices, t0, t1, cfg)
         det_series = {name: simulate_baseline_series(
             prices, tg, cfg.env.transaction_cost) for name, tg in det.items()}
-        # buy-and-hold the index: cost-invariant, fully invested
+        # ^GSPC price index (no dividends, no costs): context line only
         bh = buy_and_hold_index(index.loc[prices.index])
         bh_row = summarize(bh["log_returns"], bh["turnover"])
         bh_row["final_value"] = bh["final_value"]
@@ -182,7 +183,7 @@ def _baseline_policy(run_dir: Path, features):
     sensitivity too (buy-and-hold is cost-invariant: its stored series is
     reused)."""
     from exo_portfolio.baselines.classical import (
-        deterministic_target_baselines, random_policy_in_env,
+        deterministic_window_targets, random_policy_in_env,
         random_target_baselines, simulate_baseline_series)
     from exo_portfolio.eval.metrics import summarize
 
@@ -192,7 +193,7 @@ def _baseline_policy(run_dir: Path, features):
     def evaluate(s, e, c):
         prices = features.prices.iloc[s:e + 1]
         if kind == "deterministic":
-            tg = deterministic_target_baselines(prices, c)[name]
+            tg = deterministic_window_targets(features.prices, s, e, c)[name]
             return simulate_baseline_series(prices, tg, c.env.transaction_cost)
         if kind == "random_target":
             tg = random_target_baselines(prices, seed)[name]
@@ -304,7 +305,7 @@ def stage_report(cfg0: Config, features, folds, results: Path):
                                        "mean_variance", "inverse_vol",
                                        "min_variance", "max_sharpe", "momentum",
                                        "buy_and_hold_index", "random_weight",
-                                       "random_buy_and_hold", "random_action")
+                                       "random_constant_mix", "random_action")
                            if c in df["cell"].values)
     n_folds = df[df["split"] == "test"]["fold"].nunique()
     if "cell4" in df["cell"].values and baseline_cells and n_folds >= 3:

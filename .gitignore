@@ -12,3 +12,4 @@ repo.bundle
 
 results_smoke/
 *.log
+results_superseded/

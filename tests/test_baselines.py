@@ -6,8 +6,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from exo_portfolio.baselines.classical import (buy_and_hold_index,
+from exo_portfolio.baselines.classical import (baseline_history_days,
+                                               buy_and_hold_index,
                                                deterministic_target_baselines,
+                                               deterministic_window_targets,
                                                equal_weight_targets,
                                                inverse_vol_targets,
                                                max_sharpe_targets,
@@ -15,7 +17,7 @@ from exo_portfolio.baselines.classical import (buy_and_hold_index,
                                                min_variance_targets,
                                                momentum_targets,
                                                random_baseline_rng,
-                                               random_buy_and_hold_targets,
+                                               random_constant_mix_targets,
                                                random_policy_in_env,
                                                random_weight_targets,
                                                run_classical_baselines,
@@ -178,14 +180,14 @@ def test_random_weight_deterministic_and_valid(market):
     assert np.isfinite(out["log_returns"]).all()
 
 
-def test_random_buy_and_hold_constant_and_valid(market):
+def test_random_constant_mix_constant_and_valid(market):
     prices = market["prices"]
     T, N = prices.shape
-    a = random_buy_and_hold_targets(T, N, random_baseline_rng(0, "random_buy_and_hold"))
-    b = random_buy_and_hold_targets(T, N, random_baseline_rng(0, "random_buy_and_hold"))
+    a = random_constant_mix_targets(T, N, random_baseline_rng(0, "random_constant_mix"))
+    b = random_constant_mix_targets(T, N, random_baseline_rng(0, "random_constant_mix"))
     _assert_valid_simplex(a, T, N)
     assert np.array_equal(a, b)
-    assert np.allclose(a, a[0]), "buy-and-hold must be a constant allocation"
+    assert np.allclose(a, a[0]), "constant-mix must be a constant allocation"
     # independent stream from random_weight (first rows differ)
     rw = random_weight_targets(T, N, random_baseline_rng(0, "random_weight"))
     assert not np.array_equal(a[0], rw[0])
@@ -221,3 +223,20 @@ def test_baseline_series_shape_and_registry(market):
         assert len(ser[key]) == T - 1, key
     assert ((ser["exposure"] >= 0) & (ser["exposure"] <= 1)).all()
     assert np.isfinite(ser["metrics"]["sharpe"])
+
+
+def test_window_targets_use_pre_fold_history(market):
+    """Pre-window history must make the in-window targets identical to the
+    rule run over the full series (causality), and remove the all-cash
+    warm-up the rolling rules had when started cold at the window."""
+    cfg = Config()
+    prices = market["prices"]
+    s, e = baseline_history_days(cfg) + 40, len(prices) - 1
+    win = deterministic_window_targets(prices, s, e, cfg)
+    full = deterministic_target_baselines(prices, cfg)
+    cold = deterministic_target_baselines(prices.iloc[s:e + 1], cfg)
+    for name, tg in win.items():
+        assert tg.shape == (e - s, prices.shape[1] + 1), name
+        np.testing.assert_allclose(tg, full[name][s:e], err_msg=name)
+    assert (cold["inverse_vol"][:cfg.baselines.trad_window, 0] == 1.0).all()
+    assert (win["inverse_vol"][:, 0] == 0.0).all()     # invested from day 0

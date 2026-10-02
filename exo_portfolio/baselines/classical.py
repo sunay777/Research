@@ -9,7 +9,9 @@ Every target-weight rule is CAUSAL: row t is a function of data dated <= t.
 
 Baselines:
 - equal_weight   : 1/N across assets, rebalanced every step
-- buy_and_hold_index : the ^GSPC index itself (no costs; pure price series)
+- buy_and_hold_index : the ^GSPC PRICE index (no dividends, no costs) — a
+                   context line only; the headline benchmark is equal_weight
+                   on the same universe, costs and survivorship bias
 - mean_variance  : rolling Markowitz estimate, long-only heuristic
                    (w ∝ Σ̂⁻¹μ̂ with ridge shrinkage, negatives clipped,
                    renormalised; all-cash if nothing is attractive)
@@ -82,7 +84,12 @@ def equal_weight_targets(T: int, N: int) -> np.ndarray:
     return targets
 
 
-def vol_overlay_targets(prices: pd.DataFrame, window: int = 20,
+# default windows of the classical rules (the M10 rules take cfg.baselines)
+VOL_OVERLAY_WINDOW = 20
+MEAN_VARIANCE_WINDOW = 60
+
+
+def vol_overlay_targets(prices: pd.DataFrame, window: int = VOL_OVERLAY_WINDOW,
                         target_vol: float = 0.10,
                         periods_per_year: int = TRADING_DAYS) -> np.ndarray:
     """1/N scaled by min(1, target_vol / trailing annualised realised vol of
@@ -107,7 +114,7 @@ def vol_overlay_targets(prices: pd.DataFrame, window: int = 20,
     return targets
 
 
-def mean_variance_targets(prices: pd.DataFrame, window: int = 60,
+def mean_variance_targets(prices: pd.DataFrame, window: int = MEAN_VARIANCE_WINDOW,
                           ridge: float = 1e-4) -> np.ndarray:
     """Rolling Markowitz: w ∝ (Σ̂ + ridge·I)⁻¹ μ̂ on the trailing `window` of
     daily log-returns (data <= t only), negatives clipped to zero and the rest
@@ -250,7 +257,9 @@ def momentum_targets(prices: pd.DataFrame, lookback: int = 60,
 
 # Fixed per-baseline stream indices so each random baseline is independently
 # reproducible from a single integer seed (SeedSequence-style spawning).
-RANDOM_BASELINE_STREAM = {"random_weight": 1, "random_buy_and_hold": 2,
+# (random_constant_mix was named random_buy_and_hold; its stream index is
+# unchanged, so the draws are identical)
+RANDOM_BASELINE_STREAM = {"random_weight": 1, "random_constant_mix": 2,
                           "random_action": 3}
 
 
@@ -267,10 +276,11 @@ def random_weight_targets(T: int, N: int,
     return rng.dirichlet(np.ones(N + 1), size=T - 1)
 
 
-def random_buy_and_hold_targets(T: int, N: int,
+def random_constant_mix_targets(T: int, N: int,
                                 rng: np.random.Generator) -> np.ndarray:
     """Draw one long-only weight vector (Dirichlet over N assets + cash) and
-    hold it — every row identical (a random constant allocation)."""
+    rebalance back to it every step — every row identical (a random
+    constant-mix allocation; NOT buy-and-hold, which would let weights drift)."""
     w = rng.dirichlet(np.ones(N + 1))
     return np.tile(w, (T - 1, 1))
 
@@ -331,6 +341,31 @@ def deterministic_target_baselines(prices: pd.DataFrame,
     }
 
 
+def baseline_history_days(cfg: Config) -> int:
+    """Trading days of pre-window price history the rolling rules need so
+    that their first in-window row already has a full lookback."""
+    b = cfg.baselines
+    return max(b.trad_window, b.momentum_lookback, MEAN_VARIANCE_WINDOW,
+               VOL_OVERLAY_WINDOW) + 1
+
+
+def deterministic_window_targets(prices: pd.DataFrame, start: int, end: int,
+                                 cfg: Config) -> dict[str, np.ndarray]:
+    """Deterministic baselines for the window prices[start..end] (positional,
+    inclusive), with the rolling rules' lookback filled from up to
+    baseline_history_days(cfg) rows BEFORE `start`.
+
+    Every rule is causal (row t uses data <= t), so this equals running the
+    rule over the longer history and keeping the in-window rows: the
+    baselines no longer sit in cash for their first `window` days of each
+    test fold. The portfolio itself still starts all-cash at `start` (E.5),
+    like the RL agents. Returns (end-start, N+1) rows per baseline, aligned
+    with prices.iloc[start:end + 1]."""
+    h = min(start, baseline_history_days(cfg))
+    det = deterministic_target_baselines(prices.iloc[start - h:end + 1], cfg)
+    return {name: tg[h:] for name, tg in det.items()}
+
+
 def random_target_baselines(prices: pd.DataFrame,
                             seed: int) -> dict[str, np.ndarray]:
     """name -> (T-1, N+1) target rows for the seeded random target baselines."""
@@ -338,8 +373,8 @@ def random_target_baselines(prices: pd.DataFrame,
     return {
         "random_weight": random_weight_targets(
             T, N, random_baseline_rng(seed, "random_weight")),
-        "random_buy_and_hold": random_buy_and_hold_targets(
-            T, N, random_baseline_rng(seed, "random_buy_and_hold")),
+        "random_constant_mix": random_constant_mix_targets(
+            T, N, random_baseline_rng(seed, "random_constant_mix")),
     }
 
 
