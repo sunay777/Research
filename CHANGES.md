@@ -2,7 +2,8 @@
 
 The main grid (cell0–cell4 × 10 seeds × 5 folds, 2,000,000 PPO steps per run,
 250 runs) finished on 2026-10-01. The 250 trained models were never retrained
-or edited. Every change below either adds runs or changes how existing runs
+or edited. §8 records a data-alignment bug (macro look-ahead) found on
+2026-10-11, the fix, and its measured effect on the trained models. Every change below either adds runs or changes how existing runs
 are evaluated, pooled or reported. Dates are when each change was made.
 
 ## 1. Additional control cells
@@ -148,6 +149,81 @@ partition). cell0c, cell0cw, the full-budget synthetic experiment and every
 re-evaluation above ran locally on an Apple M4 (one thread per run,
 `OMP_NUM_THREADS=1`), using the same code and configuration.
 
+## 8. Macro publication-lag fix and re-evaluation (2026-10-11)
+
+**8.1 The bug.** The actor's macro features became visible before they were
+published, in two ways:
+- FRED stamps a monthly value with the *first* day of its reference month, and
+  the lag was added to that stamp. So the Fed funds average for month m was
+  visible from day 2 of month m, before most of the days it averages.
+- The lag config is keyed by the raw series (`CPIAUCSL`), but it was looked up
+  by the derived column name (`CPI_YOY`), which silently fell back to **0 days**.
+  CPI inflation for month m was visible from the 1st of month m, about six
+  weeks before its release.
+
+Example: on 2 March 2020 the actor already saw March's Fed funds average (0.65%,
+reflecting the emergency cuts of 3 and 15 March) and March's CPI inflation.
+Because the CPI lag was 0, the actor's and the critic's CPI columns were
+identical, and the "privileged" critic input differed from the actor's only by
+one day of Fed funds. Every cell that sees macro (cells 1–4) was trained and
+evaluated with these inputs.
+
+**8.2 The fix** (`exo_portfolio/data/align.py`, `configs/base.yaml`):
+- Lags now count from the **end** of the reference month.
+- Derived features inherit their source series' lag (`MACRO_SOURCE`), and a
+  column with no configured lag raises an error instead of defaulting to 0.
+- CPI lag is now **31 days** after month end (was 14). Normal releases come
+  10–17 days after month end, but shutdown-delayed releases came later (e.g.
+  September 2025 CPI on 24 October 2025); 31 days rules out any leak.
+- The missing October 2025 CPI (not collected during the US government
+  shutdown) is no longer padded from September; that month adds no new value.
+- The critic's privileged copy is now visible from the end of its reference
+  month: it never describes days after t, but is still ahead of publication.
+  For Fed funds this equals the actor's value on 98% of days, so the critic's
+  privilege is now almost entirely the CPI release delay.
+- Three regression tests in `tests/test_no_lookahead.py`; the existing lag test
+  now checks the end-of-month rule. 110 tests.
+- Side effect: the first usable day moves from 2011-01-03 to 2011-03-03, so
+  any NEW run would get test windows shifted by about 3–4 weeks
+  (fold0 test would start 2018-10-25 instead of 2018-09-27). Pin the folds to
+  the old dates before retraining so new runs stay paired with the old ones.
+
+**8.3 Re-evaluation of the trained models** (`exo_portfolio/eval/macro_lag_reeval.py`).
+Nothing was retrained. All 250 models of cells 0–4 were rolled out on their
+original test windows twice: once on the exact inputs they were trained with
+(rebuilt with the old alignment; every run reproduces its saved test metrics,
+max abs error 1.4e-5, from a different torch version), and once with only the
+actor's two macro columns replaced by correctly lagged ones.
+
+| Cell | Test Sharpe, old inputs → corrected | Paired p | Portfolio reallocated |
+|---|---|---|---|
+| cell0 (null control) | 0.425 → 0.425 | 1.0 | 0% |
+| cell1 | −0.514 → −0.508 | 0.11 | 1.9% |
+| cell2 | 0.716 → 0.713 | 0.84 | 1.1% |
+| cell3 | −0.564 → −0.562 | 0.69 | 1.5% |
+| cell4 | 0.715 → 0.706 | 0.51 | 1.5% |
+
+Effect on the headline comparisons (cell4 vs each cell, Holm across the same
+24-test family; cells without macro keep their saved metrics):
+
+| cell4 vs | Sharpe Δ, Holm p (old → corrected) | Sortino Δ, Holm p (old → corrected) |
+|---|---|---|
+| cell0cw | +0.289, 0.046 → +0.281, **0.062** | +0.438, 0.035 → +0.425, **0.047** |
+| cell0 | +0.289, 0.047 → +0.281, **0.065** | +0.427, 0.047 → +0.414, **0.065** |
+| cell0c | +0.139, 0.34 → +0.131, 0.46 | +0.217, 0.29 → +0.204, 0.39 |
+
+Everything else keeps its conclusion: cell4 ≈ cell2 (Sharpe −0.007), cell4
+beats cell1/cell3, cell4 does not beat equal weight (Sharpe −0.22, n = 5),
+and stressed-day Sharpe is unchanged (cell4 −2.56 vs cell0 −1.93, paired
+difference −0.63, p = 0.003; vs cell0cw −0.19, p = 0.31).
+
+**Interpretation for the write-up.** The trained policies barely use the leaked
+macro values at test time, so the test-time effect of the leak is small. It does
+not remove the training-time effect: cells 1–4 were trained on inputs that
+contained future information. The cell4-vs-cell0cw Sharpe result was borderline
+before and is no longer significant after Holm correction; Sortino stays just
+under 0.05. Outputs: `results/tables/macro_lag_reeval_*.csv`.
+
 ## Known limitations (unchanged, state in the thesis)
 
 - **Survivorship bias:** the universe is the 2024 DJIA membership applied back
@@ -155,5 +231,12 @@ re-evaluation above ran locally on an Apple M4 (one thread per run,
   the absolute returns of every strategy on these stocks, agents and baselines
   alike; comparisons between them are unaffected.
 - **Cash earns 0%.**
+- **Macro look-ahead in the trained models** (§8): cells 1–4 were trained with
+  macro inputs that were visible before publication. Fixed in the code on
+  2026-10-11 and bounded at test time by re-evaluation; removing the
+  training-time effect needs retraining cells 1–4.
 - **Privileged critic input** (cell3 and cell4) is only the two macro series
-  (Fed funds rate, CPI year on year) without their 1- and 14-day publication lags.
+  (Fed funds rate, CPI year on year). In the trained models it was effectively
+  the same as the actor's input (§8.1). After the fix it is each value from the
+  end of its reference month, before publication; for a meaningful privileged
+  signal at retraining, use the daily Fed funds rate (FRED `DFF`).

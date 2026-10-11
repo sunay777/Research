@@ -21,7 +21,7 @@ def test_yaml_merge():
     cfg = Config.from_yaml(CONFIGS / "base.yaml", CONFIGS / "universe_djia30.yaml")
     assert cfg.data.universe == "djia30"
     assert len(cfg.data.tickers) == 29          # DOW excluded (no pre-2019 data)
-    assert cfg.data.macro_publication_lag_days["CPIAUCSL"] == 14
+    assert cfg.data.macro_publication_lag_days["CPIAUCSL"] == 31
     # base.yaml values survive the merge
     assert cfg.train.gamma == 0.99
 

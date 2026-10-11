@@ -5,8 +5,9 @@ have been knowable at the market close of day `t`.
 
 Two aligned macro versions are produced:
 - ``exo_actor``        — publication-lagged (deployment-realistic)
-- ``exo_critic_extra`` — un-lagged reference-period values (privileged,
-  consumed ONLY by the asymmetric critic). Still causal: nothing dated > t.
+- ``exo_critic_extra`` — values visible from the end of their reference
+  period, without the publication delay (privileged, consumed ONLY by the
+  asymmetric critic). Still causal: never describes days after t.
 """
 
 from __future__ import annotations
@@ -24,44 +25,81 @@ from exo_portfolio.config import Config
 # Macro helpers
 # ---------------------------------------------------------------------------
 
+# Each derived feature inherits the publication lag of the raw FRED series it
+# is computed from (the lag config is keyed by raw FRED code).
+MACRO_SOURCE = {"CPI_YOY": "CPIAUCSL"}
+
+
 def transform_macro(macro: pd.DataFrame) -> pd.DataFrame:
     """Turn raw FRED levels into model features.
 
     CPIAUCSL (CPI level) -> CPI_YOY, year-on-year inflation. The YoY value for
     reference month m is computable the moment month m's CPI is published, so
-    it inherits CPIAUCSL's publication lag unchanged.
+    it inherits CPIAUCSL's publication lag (see MACRO_SOURCE).
+
+    A missing reference month (e.g. October 2025 CPI, never collected during
+    the US government shutdown) stays missing: it is NOT padded from the
+    previous month, so that month simply carries no new value.
     """
     out = macro.copy()
     if "CPIAUCSL" in out.columns:
-        out["CPI_YOY"] = out["CPIAUCSL"].pct_change(12)
+        out["CPI_YOY"] = out["CPIAUCSL"].pct_change(12, fill_method=None)
         out = out.drop(columns=["CPIAUCSL"])
     return out
+
+
+def reference_period_end(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """FRED stamps a monthly observation with the FIRST day of its reference
+    month, but a monthly average or index level is only complete at the END of
+    that month. Map each stamp to the last calendar day of its month."""
+    return index + pd.offsets.MonthEnd(0)
+
+
+def macro_lag(col: str, lags: dict[str, int]) -> int:
+    """Publication lag for a (possibly derived) macro column. A column with no
+    configured lag is an error, never a silent zero."""
+    key = MACRO_SOURCE.get(col, col)
+    if key not in lags:
+        raise KeyError(f"no publication lag configured for macro column "
+                       f"{col!r} (looked up {key!r}); add it to "
+                       f"data.macro_publication_lag_days")
+    return int(lags[key])
 
 
 def apply_publication_lag(macro: pd.DataFrame, lags: dict[str, int],
                           calendar: pd.DatetimeIndex) -> pd.DataFrame:
     """Shift each series to its publication date, then forward-fill onto the
     trading calendar so day t carries the most recent value *published on or
-    before* t (Manual D.4). Lag is in calendar days.
+    before* t (Manual D.4).
+
+    Publication date = end of the reference month + lag (calendar days), so a
+    lag is "days after the reference period closes", matching how statistical
+    agencies schedule releases.
     """
     cols = {}
     for col in macro.columns:
-        lag = lags.get(col, 0)
+        lag = macro_lag(col, lags)
         s = macro[col].dropna()
-        s = pd.Series(s.values, index=s.index + pd.Timedelta(days=lag), name=col)
-        cols[col] = _ffill_onto(s, calendar)
+        pub = reference_period_end(s.index) + pd.Timedelta(days=lag)
+        cols[col] = _ffill_onto(pd.Series(s.values, index=pub, name=col), calendar)
     return pd.DataFrame(cols, index=calendar)
 
 
 def align_unlagged(macro: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFrame:
-    """Un-lagged (privileged) version: value visible from its reference date.
+    """Privileged (critic-only) version: each value becomes visible at the END
+    of its reference month, i.e. as soon as the period it measures is over,
+    without waiting for the publication delay.
 
-    Still causal — the value carried at day t is dated <= t.
+    It never contains information about days after t (the period it describes
+    has fully elapsed); it is privileged only because the deployed actor has to
+    wait for the official release.
     """
-    return pd.DataFrame(
-        {c: _ffill_onto(macro[c].dropna(), calendar) for c in macro.columns},
-        index=calendar,
-    )
+    cols = {}
+    for c in macro.columns:
+        s = macro[c].dropna()
+        s = pd.Series(s.values, index=reference_period_end(s.index), name=c)
+        cols[c] = _ffill_onto(s, calendar)
+    return pd.DataFrame(cols, index=calendar)
 
 
 def _ffill_onto(s: pd.Series, calendar: pd.DatetimeIndex) -> pd.Series:

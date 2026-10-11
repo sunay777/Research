@@ -28,10 +28,11 @@ class DataCfg:
     index_ticker: str = "^GSPC"
     vix_ticker: str = "^VIX"
     macro_series: list[str] = field(default_factory=lambda: ["FEDFUNDS", "CPIAUCSL"])
-    # Publication lag in *calendar days* per FRED series: the value for a
-    # reference period only becomes visible this many days after its date.
+    # Publication lag in *calendar days* per raw FRED series, counted from
+    # the END of the reference month (data/align.apply_publication_lag).
+    # Derived features (CPI_YOY) inherit their source series' lag.
     macro_publication_lag_days: dict[str, int] = field(
-        default_factory=lambda: {"FEDFUNDS": 1, "CPIAUCSL": 14}
+        default_factory=lambda: {"FEDFUNDS": 1, "CPIAUCSL": 31}
     )
     price_window: int = 30          # lookback window of per-asset log-returns
     cache_dir: str = "data_cache"   # raw downloads cached here as CSV

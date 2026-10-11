@@ -37,23 +37,61 @@ def test_features_pure_function_of_past(bundle, cfg):
 
 
 def test_macro_lag_applied(bundle, cfg):
-    """A macro jump dated d must reach exo_actor only at d + lag, but reach
-    exo_critic_extra (privileged, un-lagged) already at d."""
+    """A macro jump in reference month m must reach exo_actor only at
+    end-of-month(m) + lag, and exo_critic_extra (privileged) at end-of-month(m)
+    -- never earlier, because before then month m has not finished."""
     lag = cfg.data.macro_publication_lag_days["FEDFUNDS"] = 30
     b = {k: v.copy() for k, v in bundle.items()}
-    d = b["macro"].index[100]
-    b["macro"].loc[d:, "FEDFUNDS"] += 100.0          # big jump at reference date d
+    d = b["macro"].index[100]                         # FRED stamp: 1st of month m
+    b["macro"].loc[d:, "FEDFUNDS"] += 100.0           # big jump from month m on
 
     fs = build_features(**b, cfg=cfg)
     actor = fs.exo_actor["FEDFUNDS_lagged"]
     critic = fs.exo_critic_extra["FEDFUNDS_unlagged"]
-    pub = d + pd.Timedelta(days=lag)
+    month_end = d + pd.offsets.MonthEnd(0)
+    pub = month_end + pd.Timedelta(days=lag)
 
     assert (actor[fs.dates < pub] < 50).all(), "jump visible to actor before publication"
     assert (actor[fs.dates >= pub] > 50).all(), "jump missing after publication"
-    assert (critic[(fs.dates >= d) & (fs.dates < pub)] > 50).all(), \
-        "privileged critic should see the un-lagged value from its reference date"
-    assert (critic[fs.dates < d] < 50).all(), "even privileged info must not predate d"
+    assert (critic[fs.dates < month_end] < 50).all(), \
+        "privileged critic saw month m before month m was over"
+    assert (critic[(fs.dates >= month_end) & (fs.dates < pub)] > 50).all(), \
+        "privileged critic should see month m from its end, before publication"
+
+
+def test_cpi_yoy_inherits_cpi_lag(bundle, cfg):
+    """Regression: CPI_YOY is derived from CPIAUCSL and must get CPIAUCSL's lag
+    (it used to fall through to a 0-day lag because the lag lookup used the
+    derived column name)."""
+    lag = cfg.data.macro_publication_lag_days["CPIAUCSL"] = 31
+    b = {k: v.copy() for k, v in bundle.items()}
+    d = b["macro"].index[100]
+    b["macro"].loc[d:, "CPIAUCSL"] *= 3.0             # YoY jumps in month m
+
+    fs = build_features(**b, cfg=cfg)
+    actor = fs.exo_actor["CPI_YOY_lagged"]
+    pub = d + pd.offsets.MonthEnd(0) + pd.Timedelta(days=lag)
+    assert (actor[fs.dates < pub] < 1.0).all(), "CPI_YOY visible before publication"
+    assert (actor[(fs.dates >= pub) & (fs.dates < pub + pd.Timedelta(days=20))] > 1.0).all()
+
+
+def test_unconfigured_macro_lag_is_an_error(bundle, cfg):
+    """A macro column with no configured lag must fail loudly, not default to 0."""
+    import pytest
+    del cfg.data.macro_publication_lag_days["CPIAUCSL"]
+    with pytest.raises(KeyError):
+        build_features(**bundle, cfg=cfg)
+
+
+def test_missing_cpi_month_not_padded(bundle, cfg):
+    """A missing CPI month (e.g. Oct 2025) must not be filled from the previous
+    month's level: no new YoY value is published for it."""
+    from exo_portfolio.data.align import transform_macro
+    m = bundle["macro"].copy()
+    gap = m.index[60]
+    m.loc[gap, "CPIAUCSL"] = np.nan
+    yoy = transform_macro(m)["CPI_YOY"]
+    assert np.isnan(yoy.loc[gap])
 
 
 def test_final_matrix_nan_free(bundle, cfg):

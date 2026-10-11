@@ -1,5 +1,15 @@
 # Running the exo_portfolio grid on mscluster
 
+> **Out of date for mscluster — read first.** The `train_array.slurm` route
+> below does not work there: the `mss_stampede` QOS allows only 20 queued and
+> 2 running jobs (a 250-task array is rejected), and Python lives in an
+> Apptainer container, so `module load` / `.venv` fail in batch jobs. The grid
+> was actually run with `run_grid_grouped.slurm` (13 groups × 20 runs,
+> idempotent, 6 h per-run timeout) plus `run_missing.slurm` for stragglers,
+> with `export PATH=$HOME/exo_portfolio/pybin:$PATH`. Measured run times:
+> about 1 h for cell0/cell1, 3–4 h for cell2–4 (not 11 h). Full notes:
+> `mscluster_setup_and_run_summary.md` in the parent Research folder.
+
 The full ablation grid is 5 cells x 10 seeds x 5 folds = **250 independent
 runs**, each 2,000,000 steps. Each run is one Slurm array task. CPU only —
 no GPU needed.

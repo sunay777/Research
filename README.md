@@ -5,15 +5,16 @@ Honours research project, Sunay Master (2677874).
 ## Layout
 
 ```
-configs/            base.yaml, universe_djia30.yaml, experiment_grid.yaml
+configs/            base.yaml, universe_djia30.yaml, experiment_grid*.yaml, exo_ablation.yaml
 exo_portfolio/
   config.py         typed config schema; seed_everything
-  data/             loaders (yfinance/FRED) · align (lags, NaN policy) · splits (folds)
+  data/             loaders (yfinance/FRED) · align (publication lags, NaN policy) · splits (folds)
   envs/             portfolio_env (Exo-MDP env) · synthetic_exo (Part I, M8)
   models/           encoders · heads · agent (ablation switches)      [M5]
   algos/            custom PPO (dict obs + privileged critic)         [M5]
   baselines/        classical (1/N, MV, vol overlay) [M3] · SB3       [M4]
   eval/             metrics [M3] · regimes · stats · diagnostics      [M7]
+                    test_time_ablation · macro_lag_reeval · figures
   train.py          single-run entrypoint (cell, seed, fold)          [M4+]
   run_grid.py       full experiment matrix                            [M6]
 tests/              env math · metrics · no-lookahead · splits
@@ -60,6 +61,25 @@ internet; the CSV cache makes everything reproducible offline afterwards.
 | M8  | Synthetic Exo-MDP `P_exo`-shift experiment                                                                                          | ✅ code done; full ≥10-seed run is a cluster job   |
 | M9  | One-command full reproduction (`reproduce.py`)                                                                                      | ✅ done (smoke budget verified end-to-end)         |
 | M10 | Baseline extensions (random + traditional weight-rules, DDPG/TD3, exo-feature ablation axis, baselines wired into the tables/stats) | ✅ done (tests green; smoke reproduction verified) |
+
+## Post-grid changes and the macro-lag fix
+
+`CHANGES.md` records every change made after the main grid finished
+(control cells, pooled diagnostics, baseline fixes). §8 there covers a
+data-alignment bug found on 2026-10-11: macro features (Fed funds, CPI
+inflation) reached the actor before they were published, because the lag was
+counted from FRED's start-of-month date stamp and CPI inflation got no lag at
+all. It is fixed in `data/align.py` (lags now count from the end of the
+reference month; CPI lag 31 days). The trained models were re-evaluated with
+corrected inputs rather than retrained:
+
+```bash
+python -m exo_portfolio.eval.macro_lag_reeval --cells cell1 --out results/macro_lag_reeval/cell1.csv
+python -m exo_portfolio.eval.macro_lag_reeval --summarize results/macro_lag_reeval
+```
+
+Test-time effect is small (cell4 Sharpe 0.715 → 0.706), but cells 1–4 were
+trained on the leaked inputs, so a fully clean result needs retraining them.
 
 ## Reproducing everything (M9)
 

@@ -6,9 +6,13 @@ data:
   index_ticker: "^GSPC"
   vix_ticker: "^VIX"
   macro_series: [FEDFUNDS, CPIAUCSL]
+  # Calendar days after the END of the reference month (FRED stamps the 1st).
+  # CPI_YOY inherits the CPIAUCSL lag.
   macro_publication_lag_days:
-    FEDFUNDS: 1      # monthly average, published ~1 business day after month end
-    CPIAUCSL: 14     # CPI released ~mid following month
+    FEDFUNDS: 1      # monthly average of daily EFFR; complete the day after month end
+    CPIAUCSL: 31     # CPI is normally released ~10-17 days after month end, but
+                     # shutdown-delayed releases came later (e.g. Sep 2025 CPI on
+                     # 24 Oct 2025); 31 days is a conservative bound with no leak
   price_window: 30
   cache_dir: data_cache
 
