@@ -240,3 +240,43 @@ under 0.05. Outputs: `results/tables/macro_lag_reeval_*.csv`.
   the same as the actor's input (§8.1). After the fix it is each value from the
   end of its reference month, before publication; for a meaningful privileged
   signal at retraining, use the daily Fed funds rate (FRED `DFF`).
+
+## 9. Supervisor review of draft 1 (2026-10-24)
+
+**9.1 Fold-level statistics.** The 10 seeds in a fold share one test period,
+so the 50 runs of a cell are not independent. All paired tests now average
+over seeds within each fold and compare the five fold means with a paired
+t-test (a Wilcoxon test cannot reach p < 0.05 with n = 5), Holm-corrected
+within each family (`eval/fold_level_stats.py` ->
+`results/tables/fold_level/`). Only the factored-vs-flat comparisons survive;
+cell4 vs cell0cw Sharpe is +0.29, p = 0.068 unadjusted, 0.88 Holm. Re-running
+with publication-dated macro inputs changes none of the fold-level
+conclusions.
+
+**9.2 Untrained policy** (`eval/untrained_policy.py` ->
+`results/untrained/`). Every cell, built exactly as in training but not
+trained, scores test Sharpe 0.926 (equal weight 0.923): the near-zero
+initial logits give 1/30 to each stock and cash. Every trained cell's mean
+Sharpe is below its untrained starting point (cell4 -0.21, Holm p = 0.57;
+flat cells about -1.45, Holm p ~ 0.05).
+
+**9.3 Normalised flat agents** (`experiments/norm_flat.py`, presets
+cell1n / cell3n). cell1 / cell3 with every input z-scored on the fold's
+training window only; same features, folds, seeds and budget as the grid.
+Runs natively on the Mac with `zsh cluster/run_norm_mac.sh` (resumable).
+Result (100 runs, 2026-10-24): normalisation makes both agents worse in every
+fold. Test Sharpe cell1n -1.02 (cell1 -0.51), cell3n -1.20 (cell3 -0.56);
+turnover rises to about 1.5/day; training Sharpe stays 4.6-6.7. cell4 beats
+both (Holm p = 0.030, 0.033; family of 16 in
+`tables/fold_level/normalised_flat.csv`). Re-evaluating with
+publication-dated macro (`eval/norm_flat_reeval.py`) moves mean Sharpe by
+< 0.005 and changes no conclusion. `eval/macro_lag_reeval.make_actor` now
+maps cell1n to the cell1 SB3 observation level.
+
+**9.4 First-step reward.** Episodes start in cash, so the first return is the
+opening trade's cost with zero variance; the first reward is about -2 (cell4)
+to -20 (cell1), against typical |r| < 1. One step per episode; documented in
+the paper, not changed (changing it would break comparability with the grid).
+
+**9.5 Figures** use the paper's plain agent names (`eval/figures.py`
+`DISPLAY_NAMES`, `plot_thesis_figures.CELL_LABELS`).

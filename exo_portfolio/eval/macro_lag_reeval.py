@@ -154,10 +154,11 @@ def make_actor(run_dir: Path, cfg: Config, features: FeatureSet):
         from stable_baselines3 import PPO
 
         from exo_portfolio.baselines.sb3_baselines import make_env
+        from exo_portfolio.train import SB3_LEVEL
 
         model = PPO.load(run_dir / "model.zip", device="cpu")
         return lambda f, s, e: rollout_series(
-            make_env(f, cfg, s, e, cfg.cell),
+            make_env(f, cfg, s, e, SB3_LEVEL.get(cfg.cell, cfg.cell)),
             lambda o: model.predict(o, deterministic=True)[0], cfg.seed)
 
     import torch

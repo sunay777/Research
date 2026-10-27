@@ -25,6 +25,12 @@ CELL_PRESETS: dict[str, dict] = {
     # only change from cell0c.
     "cell0cw": dict(encoder="single", critic="symmetric", exo_mode="none",
                     stream_hidden=468),
+    # Normalised-input controls (supervisor review, 2026-10): cell1 and cell3
+    # with every input z-scored on its fold's training window
+    # (experiments/norm_flat.py). Same switches as cell1/cell3; the input
+    # scaling is the only change.
+    "cell1n": dict(encoder="single", critic="symmetric", exo_mode="concat"),
+    "cell3n": dict(encoder="single", critic="asymmetric", exo_mode="concat"),
 }
 
 VALID_COMBOS = {("single", "none"), ("single", "concat"), ("dual", "split")}

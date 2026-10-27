@@ -13,3 +13,6 @@ repo.bundle
 results_smoke/
 *.log
 results_superseded/
+.venv-norm/
+results_mac_backup/
+_to_delete/

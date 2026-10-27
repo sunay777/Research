@@ -48,20 +48,22 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
 
 from exo_portfolio.eval.figures import (CELL_COLORS, CELL_LINESTYLES, INK,
                                         MUTED, SERIES_LW, SURFACE, _save,
-                                        _style_ax)
+                                        _style_ax, set_title)
 from exo_portfolio.eval.regimes import label_stressed_vix
 
 STRESS_FILL = "#f3d9cf"          # soft warm tint: regime context, not a series
 FOLD_LINE = "#9d9c94"
 
 CELL_LABELS = {
-    "cell0": "cell0 (no exo)",
-    "cell0c": "cell0c (no exo, custom PPO)",
-    "cell0cw": "cell0cw (no exo, custom PPO, cell4-size)",
-    "cell1": "cell1 (monolithic)",
-    "cell2": "cell2",
-    "cell3": "cell3",
-    "cell4": "cell4",
+    "cell0": "Portfolio-only (SB3)",
+    "cell0c": "Portfolio-only",
+    "cell0cw": "Portfolio-only, large",
+    "cell1": "Flat (SB3)",
+    "cell1n": "Flat, normalised",
+    "cell2": "Factored",
+    "cell3": "Flat, priv. critic",
+    "cell3n": "Flat, priv. critic, normalised",
+    "cell4": "Full agent",
 }
 # baselines: neutral inks, told apart by dash pattern. Equal weight on the
 # same 29 stocks is the headline benchmark; the S&P line is context only.
@@ -74,7 +76,7 @@ BASELINES = {
 }
 # display names for the remaining (non-plotted-as-line) baselines
 BASELINE_NAMES = {
-    "random_constant_mix": "Random constant-mix",
+    "random_constant_mix": "Random portfolio, fixed",
     "random_weight": "Random weights (daily)",
     "random_action": "Random actions",
     "min_variance": "Min variance",
@@ -212,7 +214,7 @@ def fig_market_regimes(gspc: pd.Series, stressed: pd.Series, folds, out: Path):
     ax.set_xlim(px.index[0], px.index[-1])
     _style_ax(ax)
     ax.grid(axis="x", visible=False)
-    ax.set_title("Market path and the VIX stress regime used for evaluation",
+    set_title(ax, "Market path and the VIX stress regime used for evaluation",
                  pad=30, loc="left")
     handles = [Patch(color=STRESS_FILL, label="Stressed (VIX ≥ trailing-252d 80th pct.)"),
                Line2D([], [], color=FOLD_LINE, ls=(0, (4, 3)), label="Test-fold boundary")]
@@ -242,7 +244,8 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
         allv.append(w.values)
 
     for cell in CELL_COLORS:
-        if cell not in set(df["cell"]):
+        # the normalised flat agents appear in the final-wealth figure only
+        if cell not in set(df["cell"]) or cell in ("cell1n", "cell3n"):
             continue
         W = stitched_paths(df, cell)
         med = W.median(axis=1)
@@ -250,12 +253,12 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
         if cell in BANDED:
             q10, q90 = W.quantile(0.1, axis=1), W.quantile(0.9, axis=1)
             ax.fill_between(W.index, q10, q90, color=c, alpha=0.18, lw=0,
-                            zorder=1, label=f"{cell} seed range (10th–90th pct.)")
+                            zorder=1, label=f"{CELL_LABELS.get(cell, cell)} seed range (10th–90th pct.)")
             allv += [q10.values, q90.values]
         ax.plot(med.index, med.values, color=c, lw=SERIES_LW, zorder=4,
                 ls=CELL_LINESTYLES.get(cell, "-"),
                 label=CELL_LABELS.get(cell, cell))
-        ends.append((med.iloc[-1], cell, c))
+        ends.append((med.iloc[-1], CELL_LABELS.get(cell, cell), c))
         allv.append(med.values)
 
     allv = np.concatenate(allv)
@@ -271,7 +274,7 @@ def fig_oos_equity(df: pd.DataFrame, stressed: pd.Series, folds, out: Path):
     direct_labels(ax, [(v, f"{t}  {v:.2f}×", c) for v, t, c in ends], b1)
 
     ax.set_ylabel("Growth of $1, walk-forward out-of-sample (log scale)")
-    ax.set_title("Walk-forward out-of-sample equity curves, test folds F0–F4 "
+    set_title(ax, "Walk-forward out-of-sample equity curves, test folds F0–F4 "
                  "stitched (RL cells: median of 10 seeds)", loc="left", pad=12)
     handles, labels = ax.get_legend_handles_labels()
     handles.append(Patch(color=STRESS_FILL, label="Stressed regime"))
@@ -346,7 +349,7 @@ def fig_final_by_seed(by_seed: pd.DataFrame, out: Path):
     ax.set_yticklabels([CELL_LABELS.get(m) or BASELINE_NAMES.get(m)
                         or BASELINES.get(m, (m,))[0] for m in order])
     ax.set_xlabel("Final growth of $1, walk-forward out-of-sample (log scale)")
-    ax.set_title("Final wealth per seed (dots) and median (bar)", loc="left")
+    set_title(ax, "Final wealth per seed (dots) and median (bar)", loc="left")
     _style_ax(ax)
     ax.grid(axis="y", visible=False)
     return _save(fig, out)

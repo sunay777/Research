@@ -24,12 +24,14 @@ CELL_COLORS = {
     "cell0c": "#2a78d6",  # cell0 on the custom PPO: same blue, dashed
     "cell0cw": "#2a78d6", # cell0c at cell4's size: same blue, dotted
     "cell1": "#eb6834",   # orange
+    "cell1n": "#eb6834",  # cell1 with normalised inputs: same orange
     "cell2": "#1baf7a",   # aqua
     "cell3": "#eda100",   # yellow
+    "cell3n": "#eda100",  # cell3 with normalised inputs: same yellow
     "cell4": "#e87ba4",   # magenta
 }
 # a cell that shares another's color is told apart by dash pattern
-CELL_LINESTYLES = {"cell0c": "--", "cell0cw": ":"}
+CELL_LINESTYLES = {"cell0c": "--", "cell0cw": ":", "cell1n": "--", "cell3n": "--"}
 # shared stroke weights: thin series stay legible where many overlap
 SERIES_LW = 1.0
 MARKER_SIZE = 2.5
@@ -39,6 +41,34 @@ MUTED = "#898781"
 GRID = "#e1e0d9"
 SURFACE = "#fcfcfb"
 STRESS_SHADE = "#f0efec"
+
+# Plain display names used in the paper (internal cell ids stay in the code).
+DISPLAY_NAMES = {
+    "cell0": "Portfolio-only (SB3)",
+    "cell0c": "Portfolio-only",
+    "cell0cw": "Portfolio-only, large",
+    "cell1": "Flat (SB3)",
+    "cell1n": "Flat, normalised",
+    "cell2": "Factored",
+    "cell3": "Flat, priv. critic",
+    "cell3n": "Flat, priv. critic, norm.",
+    "cell4": "Full agent",
+}
+
+
+def display(cell: str) -> str:
+    return DISPLAY_NAMES.get(cell, cell)
+
+# Figure titles are off by default: in the paper and thesis the caption carries
+# that text. Set EXO_FIG_TITLES=1 to draw them (e.g. for slides).
+import os as _os
+SHOW_TITLES = _os.environ.get("EXO_FIG_TITLES", "0") == "1"
+
+
+def set_title(ax, text: str, **kw) -> None:
+    """ax.set_title, but only when SHOW_TITLES is on."""
+    if SHOW_TITLES:
+        ax.set_title(text, **kw)
 
 
 def _style_ax(ax):
@@ -82,7 +112,7 @@ def fig_learning_curves(results_root: str | Path, out: Path) -> Path | None:
     for cell, g in df.groupby("cell"):
         agg = g.groupby("env_steps")["mean_reward"].agg(["mean", "std"])
         c = CELL_COLORS.get(cell, MUTED)
-        ax.plot(agg.index, agg["mean"], color=c, linewidth=SERIES_LW, label=cell,
+        ax.plot(agg.index, agg["mean"], color=c, linewidth=SERIES_LW, label=display(cell),
                 linestyle=CELL_LINESTYLES.get(cell, "-"))
         if agg["std"].notna().any():
             ax.fill_between(agg.index, agg["mean"] - agg["std"],
@@ -90,7 +120,7 @@ def fig_learning_curves(results_root: str | Path, out: Path) -> Path | None:
                             linewidth=0)
     ax.set_xlabel("environment steps")
     ax.set_ylabel("mean rollout reward")
-    ax.set_title("Learning curves (mean ± std across seeds)")
+    set_title(ax, "Learning curves (mean ± std across seeds)")
     _style_ax(ax)
     ax.legend(frameon=False, fontsize=8, labelcolor=INK)
     return _save(fig, out)
@@ -109,22 +139,22 @@ def fig_synthetic_shift(csv_path: str | Path, out: Path) -> Path | None:
 
     for ax, col, title in zip(
             axes, ["mean_reward", "regret"][:ncols],
-            ["Test reward vs P_exo shift",
-             "Regret vs oracle (lower = more robust)"][:ncols]):
+            ["(a) Test reward",
+             "(b) Regret vs reference rule"][:ncols]):
         for cell, g in df.groupby("cell"):
             agg = g.groupby("shift")[col].agg(["mean", "std", "count"])
             c = CELL_COLORS.get(cell, MUTED)
             ci = 1.96 * agg["std"] / np.sqrt(agg["count"].clip(lower=1))
             ax.plot(agg.index, agg["mean"], color=c, linewidth=SERIES_LW,
                     linestyle=CELL_LINESTYLES.get(cell, "-"),
-                    marker="o", markersize=MARKER_SIZE, label=cell)
+                    marker="o", markersize=MARKER_SIZE, label=display(cell))
             if agg["std"].notna().any():
                 ax.fill_between(agg.index, agg["mean"] - ci, agg["mean"] + ci,
                                 color=c, alpha=0.15, linewidth=0)
         if col == "mean_reward" and "oracle_mean_reward" in df.columns:
             o = df.groupby("shift")["oracle_mean_reward"].mean()
             ax.plot(o.index, o.values, color=MUTED, linewidth=SERIES_LW,
-                    linestyle="--", label="oracle")
+                    linestyle="--", label="reference rule")
         ax.set_xlabel("shift magnitude s")
         ax.set_ylabel(col.replace("_", " "))
         ax.set_title(title)
@@ -145,7 +175,7 @@ def fig_equity_curves(results_root: str | Path, out: Path,
             continue
         s = pd.read_csv(p, parse_dates=["date"]).set_index("date")
         ax.plot(s.index, s["log_return"].cumsum(), linewidth=SERIES_LW,
-                color=CELL_COLORS[cell], label=cell,
+                color=CELL_COLORS[cell], label=display(cell),
                 linestyle=CELL_LINESTYLES.get(cell, "-"))
         plotted = True
     if not plotted:
@@ -167,7 +197,7 @@ def fig_equity_curves(results_root: str | Path, out: Path,
         ax.set_xlim(xs)
     ax.set_xlabel("date")
     ax.set_ylabel("cumulative log return")
-    ax.set_title(f"Test equity curves — fold {fold} (stressed days shaded)")
+    set_title(ax, f"Test equity curves — fold {fold} (stressed days shaded)")
     _style_ax(ax)
     ax.legend(frameon=False, fontsize=8, labelcolor=INK)
     return _save(fig, out)
@@ -199,9 +229,11 @@ def fig_exposure_vix_betas(betas: pd.DataFrame, out: Path) -> Path | None:
         if c in CELL_LINESTYLES:
             bar.set_hatch("///" if CELL_LINESTYLES[c] == "--" else "...")
             bar.set_edgecolor(SURFACE)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels([display(c) for c in order], rotation=35, ha="right")
     ax.axhline(0, color="#c3c2b7", linewidth=1)
     ax.set_ylabel("exposure ~ VIX slope (β)")
-    ax.set_title("De-risking response to VIX by cell"
+    set_title(ax, "De-risking response to VIX by cell"
                  + (f"\n({n_seeds} seeds averaged per fold; ±95% CI across folds)"
                     if n_seeds > 1 else ""))
     _style_ax(ax)
@@ -225,7 +257,7 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
         ax.plot(days, r["mean_response"], color=c, linewidth=SERIES_LW,
                 linestyle=CELL_LINESTYLES.get(cell, "-"),
                 marker="o", markersize=MARKER_SIZE,
-                label=f"{cell} (n={r['n_spikes']} events)")
+                label=f"{display(cell)} (n={r['n_spikes']} events)")
         if r.get("se_response"):
             se = np.asarray(r["se_response"])
             m = np.asarray(r["mean_response"])
@@ -235,7 +267,7 @@ def fig_impulse_response(responses: dict[str, dict], out: Path) -> Path | None:
     ax.set_xlabel("days after VIX spike")
     ax.set_ylabel("Δ exposure vs day −1")
     n_runs = max((r.get("n_runs", 1) for r in valid.values()), default=1)
-    ax.set_title("Impulse response of exposure to VIX spikes"
+    set_title(ax, "Impulse response of exposure to VIX spikes"
                  + (f"\n({n_runs} runs per cell, seed-averaged per event; "
                     "±95% CI across events)" if n_runs > 1 else ""))
     _style_ax(ax)

@@ -44,6 +44,9 @@ class EnvCfg:
     reward_window_K: int = 20        # rolling Sharpe window
     reward_eps: float = 1e-8
     allow_short: bool = False        # v1: long-only + cash
+    # Multiplies the last-K portfolio returns in the `endo` observation only
+    # (never the reward). 1.0 = unchanged; set by experiments/norm_flat.py.
+    endo_return_scale: float = 1.0
 
 
 @dataclass

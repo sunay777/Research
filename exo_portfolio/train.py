@@ -31,17 +31,20 @@ from exo_portfolio.data.loaders import load_raw_bundle
 from exo_portfolio.data.splits import rolling_origin_folds
 
 
-SB3_CELLS = ("cell0", "cell1")
+SB3_CELLS = ("cell0", "cell1", "cell1n")
+# information level of each SB3 cell (cell1n = cell1 on normalised inputs)
+SB3_LEVEL = {"cell0": "cell0", "cell1": "cell1", "cell1n": "cell1"}
 
 
 def run(cfg: Config, total_steps: int | None = None,
-        results_root: str | Path = "results") -> dict:
+        results_root: str | Path = "results", features=None) -> dict:
     run_dir = Path(results_root) / cfg.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "config.yaml").write_text(yaml.safe_dump(cfg.to_dict()))
     seed_everything(cfg.seed)
 
-    features = build_features(**load_raw_bundle(cfg), cfg=cfg)
+    if features is None:
+        features = build_features(**load_raw_bundle(cfg), cfg=cfg)
     # exo feature-ablation axis (M10): no-op unless cfg.exo_ablation is set.
     # Dimension-preserving, so it threads through both SB3 and custom cells.
     features = apply_exo_ablation(features, cfg)
@@ -52,10 +55,10 @@ def run(cfg: Config, total_steps: int | None = None,
         from exo_portfolio.baselines.sb3_baselines import (
             evaluate_policy_window, train_sb3)
 
-        model = train_sb3(cfg, features, t0, t1, level=cfg.cell,
+        model = train_sb3(cfg, features, t0, t1, level=SB3_LEVEL[cfg.cell],
                           run_dir=run_dir, total_steps=total_steps)
         evaluate = lambda s, e: evaluate_policy_window(
-            model, features, cfg, s, e, cfg.cell)
+            model, features, cfg, s, e, SB3_LEVEL[cfg.cell])
     else:                                   # cells 2-4: the custom Exo-agent
         import json as _json
 

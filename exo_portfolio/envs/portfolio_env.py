@@ -83,6 +83,7 @@ class PortfolioEnv(gym.Env):
         hist = self._ret_history[-self.K:]
         if hist:
             window[-len(hist):] = hist        # most recent return is last
+        window *= np.float32(self.cfg.env.endo_return_scale)
         endo = np.concatenate([self.w.astype(np.float32),
                                np.float32([self.w[0]]),      # cash fraction
                                window])
